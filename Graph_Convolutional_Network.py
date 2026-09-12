@@ -4,94 +4,47 @@ import torch.nn.functional as F
 import numpy as np
 
 
-# Define a single Graph Convolutional Network layer.
-# A GCN layer performs two main operations:
-# 1. it transforms node features using a learnable linear layer;
-# 2. it propagates and aggregates information through the graph structure
-#    using the normalized adjacency matrix.
 class GCNLayer(nn.Module):
     
     
     def __init__(self, in_features, out_features):
         super(GCNLayer, self).__init__()
-        
-        # Learnable linear transformation.
-        # This maps each node feature vector from in_features to out_features.
         self.linear = nn.Linear(in_features, out_features)
         
     def forward(self, x, adj):
-        """
-        Forward pass.
-
-        x: node features with shape:
-           (batch_size, max_nodes, in_features)
-
-        adj: normalized adjacency matrix with shape:
-             (batch_size, max_nodes, max_nodes)
-        """
         
-        # Apply the learnable linear transformation to each node independently.
-        # This corresponds to XW in the GCN formula.
-        #
-        # Shape before: (batch_size, max_nodes, in_features)
-        # Shape after:  (batch_size, max_nodes, out_features)
         x = self.linear(x)
-        
-        # Perform graph convolution using the normalized adjacency matrix.
-        #
-        # torch.bmm performs batch matrix multiplication.
-        # For each graph in the batch, it computes:
-        #
-        #     A_norm @ XW
-        #
-        # This means that each node updates its representation by combining:
-        # - its own transformed features;
-        # - the transformed features of its neighboring nodes.
-        #
-        # The normalized adjacency matrix controls how much information
-        # is received from each connected node.
         x = torch.bmm(adj, x)
         
         # Return the updated node representations.
         return x
 
 
-# Define the full Graph Convolutional Network.
-# This model takes an entire graph as input and produces a graph-level prediction.
-# In this example, it is used for molecular property prediction.
+
 class GCN(nn.Module):
   
     
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=2, dropout=0.5):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=3, dropout=0.5):
         super(GCN, self).__init__()
         
         # Store model hyperparameters.
         self.num_layers = num_layers
         self.dropout = dropout
         
-        # ModuleList is used to store multiple GCN layers.
-        # Unlike a regular Python list, ModuleList registers the layers
-        # so that PyTorch can train their parameters.
+        
         self.gcn_layers = nn.ModuleList()
         
-        # First GCN layer.
-        # It maps the original node features to the hidden dimension.
+       
         self.gcn_layers.append(GCNLayer(input_dim, hidden_dim))
         
-        # Intermediate hidden GCN layers.
-        # These layers keep the same hidden dimensionality.
         for _ in range(num_layers - 2):
             self.gcn_layers.append(GCNLayer(hidden_dim, hidden_dim))
         
-        # Final GCN layer.
-        # This produces the final node embeddings before graph-level pooling.
+        
         if num_layers > 1:
             self.gcn_layers.append(GCNLayer(hidden_dim, hidden_dim))
         
-        # classifier applied after graph-level pooling.
-        # It maps the graph representation to the final output.
-        #
-        # For binary classification, output_dim is usually 1.
+
         self.predictor = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
@@ -105,114 +58,42 @@ class GCN(nn.Module):
         # Apply all GCN layers sequentially.
         for i, gcn_layer in enumerate(self.gcn_layers):
             
-            # Update node representations using graph convolution.
+           
             x = gcn_layer(x, adj)
             
-            # Apply ReLU and dropout after every GCN layer except the last one.
-            # ReLU introduces non-linearity.
-            # Dropout helps reduce overfitting during training.
+           
             if i < len(self.gcn_layers) - 1:
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
         
-        # ---------------------------------------------------------
-        # Graph-level representation using masked average pooling
-        # ---------------------------------------------------------
-        
-        # Since graphs may have different numbers of nodes,
-        # they were padded to the same size.
-        # The mask tells the model which nodes are real and which are padding.
-        
-        # Expand the mask so that it matches the shape of x.
-        #
-        # mask shape before: (batch_size, max_nodes)
-        # mask shape after:  (batch_size, max_nodes, hidden_dim)
+
         mask_expanded = mask.unsqueeze(-1).expand_as(x)
-        
-        # Set padded node embeddings to zero.
-        # This ensures that padded nodes do not contribute to the graph representation.
+       
         x_masked = x * mask_expanded
         
-        # Compute the average of real node embeddings only.
-        #
-        # x_masked.sum(dim=1) sums node embeddings for each graph.
-        # mask.sum(dim=1, keepdim=True) counts the number of real nodes.
-        #
-        # The result is one vector representation for each graph.
+      
         graph_repr = x_masked.sum(dim=1) / mask.sum(dim=1, keepdim=True)
         
-        # Pass the graph-level representation through the predictor.
-        # The output represents the prediction for the whole graph/molecule.
+      
         output = self.predictor(graph_repr)
         
-        # Return the final prediction.
+        
         return output
 
 
 
     def graph_to_matrices(self,graph, node_features, adj_matrix):
-        """
-        Convert a NetworkX graph to a normalized adjacency matrix and feature matrix.
-
-        graph: NetworkX graph representing the molecule
-        node_features: matrix where each row contains the features of one node/atom
-
-        Returns:
-        A_norm: normalized adjacency matrix used by the GCN
-        X: node feature matrix converted to float32
-        """
         
-        # Get the number of nodes in the graph.
-        # In the molecular example, each node represents one atom.
+ 
         n_nodes = len(graph.nodes())
-        
-        # Convert the NetworkX graph into an adjacency matrix A.
-        # A has shape [num_nodes, num_nodes].
-        # A[i, j] = 1 if there is an edge/bond between node i and node j.
-        # A[i, j] = 0 if the two nodes are not connected.
-        
-        
-        # Add self-loops to the adjacency matrix.
-        # This means that each node is connected to itself.
-        #
-        # In a GCN, this is important because each node should update its representation
-        # using both:
-        # - information from its neighbors;
-        # - its own current features.
-        #
-        # Mathematically:
-        # A_tilde = A + I
         A_tilde = adj_matrix.astype(np.float32) + np.eye(n_nodes)
-        
-        # Compute the degree matrix D.
-        # The degree of a node is the number of connections it has.
-        # Since we added self-loops, the degree also includes the self-connection.
-        #
-        # D is a diagonal matrix where each diagonal value contains
-        # the degree of the corresponding node.
         D = np.diag(np.sum(A_tilde, axis=1))
-        
-        # Compute D^(-1/2), which is used for symmetric normalization.
-        #
-        # This normalization is needed because nodes can have different numbers of neighbors.
-        # Without normalization, high-degree nodes could dominate the aggregation process
-        # simply because they receive information from many more nodes.
         D_inv_sqrt = np.diag(np.power(np.diag(D), -0.5))
         
-        # Apply symmetric normalization to the adjacency matrix.
-        #
-        # Formula:
-        # A_norm = D^(-1/2) * A_tilde * D^(-1/2)
-        #
-        # This normalized adjacency matrix controls how information is propagated
-        # between connected nodes during the GCN layer.
+    
         A_norm = D_inv_sqrt @ A_tilde @ D_inv_sqrt
-        
-        # Convert node features to float32 because neural networks usually expect
-        # floating-point tensors as input.
         X = node_features.astype(np.float32)
         
-        # Return the normalized adjacency matrix and the node feature matrix.
         return A_norm, X
 
 
