@@ -46,7 +46,7 @@ class TCNLayer(nn.Module):
         # Final linear layer to produce a single output value
         self.linear = nn.Linear(num_channels[-1], 1)
 
-    def forward(self, x):
+    def forward(self, x, adj):
         """
         x has shape (batch_size, channels=1, seq_len).
         """

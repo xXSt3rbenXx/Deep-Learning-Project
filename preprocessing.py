@@ -13,7 +13,10 @@ class Preprocessing:
         threshold=0.1
         adj = pd.read_pickle(self.adj_path)
         adj_matrix = adj[2]
+
         adj_matrix[adj_matrix<threshold]=0.0
+       
+       
 
 
         datetime_col = df.columns[0]

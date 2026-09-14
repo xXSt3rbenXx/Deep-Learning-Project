@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from Temporal_Convolutional_Network import TCNLayer
 
 
 class GCNLayer(nn.Module):
@@ -24,7 +25,7 @@ class GCNLayer(nn.Module):
 class GCN(nn.Module):
   
     
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=3, dropout=0.5):
+    def __init__(self, input_dim, hidden_dim, output_dim,kernel_size, dilation, num_layers=3, dropout=0.5,):
         super(GCN, self).__init__()
         
         # Store model hyperparameters.
@@ -36,13 +37,16 @@ class GCN(nn.Module):
         
        
         self.gcn_layers.append(GCNLayer(input_dim, hidden_dim))
+        self.gcn_layers.append(TCNLayer(hidden_dim, hidden_dim, kernel_size, dilation))
         
         for _ in range(num_layers - 2):
             self.gcn_layers.append(GCNLayer(hidden_dim, hidden_dim))
+            self.gcn_layers.append(TCNLayer(hidden_dim, hidden_dim, kernel_size, dilation))
         
         
         if num_layers > 1:
             self.gcn_layers.append(GCNLayer(hidden_dim, hidden_dim))
+            self.gcn_layers.append(TCNLayer(hidden_dim, hidden_dim, kernel_size, dilation))
         
 
         self.predictor = nn.Sequential(
@@ -82,19 +86,33 @@ class GCN(nn.Module):
 
 
 
-    def graph_to_matrices(self,graph, node_features, adj_matrix):
+    def graph_to_matrices(self, node_features, adj_matrix):
         
  
-        n_nodes = len(graph.nodes())
-        A_tilde = adj_matrix.astype(np.float32) + np.eye(n_nodes)
-        D = np.diag(np.sum(A_tilde, axis=1))
+        n_nodes = adj_matrix.shape[0]
+        A_tilde = adj_matrix.astype(np.float32)
+        #La matrice non è simmetrica, va resa tale sacrificando informazioni sulla direzionalità
+        A_sim= (A_tilde+ A_tilde.T) / 2
+        D = np.diag(np.sum(A_sim, axis=1))
         D_inv_sqrt = np.diag(np.power(np.diag(D), -0.5))
         
     
-        A_norm = D_inv_sqrt @ A_tilde @ D_inv_sqrt
+        A_norm = D_inv_sqrt @ A_sim @ D_inv_sqrt
+        L=np.eye(n_nodes)-A_norm
+        eigenvalues= np.linalg.eigvalsh(L)
+        eigenvalues.sort()
+        max_eig=eigenvalues[-1]
+        L_norm= 2*L/max_eig - np.eye(n_nodes)
+
+        
         X = node_features.astype(np.float32)
         
-        return A_norm, X
+        return L_norm, X
+
+
+    def cheb_polynomial(self, x, K):
+        return 0.5*((x+np.sqrt(x**2-1))**K + (x-np.sqrt(x**2-1))**K)
+
 
 
    
