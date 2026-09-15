@@ -1,3 +1,4 @@
+from torch import rand
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -29,7 +30,7 @@ class ResidualBlock(nn.Module):
         return F.relu(out + res)
 
 class TCNLayer(nn.Module):
-    def __init__(self, num_inputs=1, num_channels=[16, 16, 16], kernel_size=2):
+    def __init__(self, num_inputs, hidden_dimension, blocks, kernel_size):
         """
         num_channels: list of output channels for each TCN layer/block.
         kernel_size: filter width of each 1D conv.
@@ -38,19 +39,17 @@ class TCNLayer(nn.Module):
         layers = []
         in_ch = num_inputs
         # Create a stack of ResidualBlocks with dilations 1, 2, 4...
-        for i, ch in enumerate(num_channels):
-            dilation = 2 ** i      # exponentially increasing dilations
-            layers.append(ResidualBlock(in_ch, ch, kernel_size, dilation))
-            in_ch = ch
+        for i in range(blocks):
+            dilation = 2 ** i      # La dilatazione consente di eseguire la convoluzione saltando i blocchi adiacenti al blocco attuale di d passi
+            layers.append(ResidualBlock(in_ch, hidden_dimension, kernel_size, dilation))
+            in_ch = hidden_dimension
         self.tcn = nn.Sequential(*layers)
         # Final linear layer to produce a single output value
-        self.linear = nn.Linear(num_channels[-1], 1)
+        
 
     def forward(self, x, adj):
         """
-        x has shape (batch_size, channels=1, seq_len).
+        x has shape (batch_size, channels, seq_len).
         """
-        out = self.tcn(x)            # (batch, channels, seq_len)
-        out = out[:, :, -1]          # take the last time step's features
-        out = self.linear(out)       # (batch, 1)
-        return out.squeeze(-1)       # return shape (batch,) 
+        return self.tcn(x)            # (batch, channels, seq_len)
+              
