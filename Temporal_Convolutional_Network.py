@@ -1,4 +1,3 @@
-from torch import rand
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -47,7 +46,7 @@ class TCNLayer(nn.Module):
         # Final linear layer to produce a single output value
         
 
-    def forward(self, x, adj):
+    def forward(self, x):
         """
         x has shape (batch_size, channels, seq_len).
         """
