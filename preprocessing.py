@@ -95,7 +95,7 @@ class Preprocessing:
         X_train, Y_train = self.sliding_windows(x_train_norm)
         X_val, Y_val = self.sliding_windows(x_val_norm)
         X_test, Y_test = self.sliding_windows(x_test_norm)
-        return  X_train, Y_train,X_val, Y_val, X_test, Y_test,adj_matrix
+        return  X_train, Y_train,X_val, Y_val, X_test, Y_test,adj_matrix,train_grouped
 
 
     #ANALISI FINESTRE SCROREVOLI
