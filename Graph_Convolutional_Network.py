@@ -1,18 +1,9 @@
 import torch 
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 from Temporal_Convolutional_Network import TCNLayer
 
-def chebyshev_pol(L, K):
-    L_shape=L.shape[0]
-    T_0= np.eye(L_shape, dtype=L.dtype)
-    T_1=L
-    T=[T_0, T_1]
-    for i in range(2, K+1):
-        T_i= 2*L @ T[i-1] - T[i-2]
-        T.append(T_i)
-    return T 
+
 
 class GCNLayer(nn.Module):
 
@@ -53,7 +44,7 @@ class GCN(nn.Module):
         for i in range(num_layers):
             if i== 0:
                 layers.append(GCNLayer(input_dim, hidden_dim, self.K, dropout))
-            elif i==num_layers-1:
+            elif i==num_layers-1 and num_layers > 1:
                 layers.append(GCNLayer(hidden_dim, hidden_dim, self.K, dropout))
                 
             else:
@@ -73,6 +64,10 @@ class GCN(nn.Module):
         self.tcn_layers= nn.ModuleList(
             [layers[i] for i in range(num_layers)]
         )
+
+        self.linear1=nn.Linear(out_dim, 3)
+        self.linear2=nn.Linear(out_dim, 3)
+        self.linear3=nn.Linear(out_dim, 3)
         
         
         
@@ -82,13 +77,13 @@ class GCN(nn.Module):
 
      
     def forward(self, x):
-        # x: (B, N, T, F)
-        B, N, T, _ = x.shape
+        # x: (B, T, N, F)
+        B, T, N, _ = x.shape
         T_list = [getattr(self, f"T_{k}") for k in range(self.K + 1)]
 
         for i in range(self.num_layers):
         
-            x_gcn_in = x.permute(0, 2, 1, 3).reshape(B * T, N, -1)   # (B*T, N, F)
+            x_gcn_in = x .reshape(B * T, N, -1)   # (B*T, N, F)
             x_gcn_out = self.gcn_layers[i](x_gcn_in, T_list)          # (B*T, N, hidden_dim)
             F_hidden = x_gcn_out.shape[-1]
             x = x_gcn_out.reshape(B, T, N, F_hidden).permute(0, 2, 1, 3)  # torna a (B, N, T, hidden_dim)
@@ -97,35 +92,31 @@ class GCN(nn.Module):
             x_tcn_in = x.reshape(B * N, T, F_hidden).permute(0, 2, 1)     # (B*N, F, T)
             x_tcn_out = self.tcn_layers[i](x_tcn_in)                       # (B*N, F', T)
             F_out = x_tcn_out.shape[1]
-            x = x_tcn_out.permute(0, 2, 1).reshape(B, N, T, F_out)          # torna a (B, N, T, F')
-
-        return x  
+            x = x_tcn_out.reshape(B, N, F_out,T ).permute(0, 3, 1,2)       # torna a (B,  T,N, F')
 
 
 
-    def graph_to_matrices(self, node_features, adj_matrix):
-        
- 
-        n_nodes = adj_matrix.shape[0]
-        A_tilde = adj_matrix.astype(np.float32)
-        #La matrice non è simmetrica, va resa tale sacrificando informazioni sulla direzionalità
-        A_sim= (A_tilde+ A_tilde.T) / 2
-        D = np.diag(np.sum(A_sim, axis=1))
-        D_inv_sqrt = np.diag(np.power(np.diag(D), -0.5))
-        
+        #Adesso genero i  quantili finali su 3/6/12 step temporali
+        #eseguo la previsione unicamente sull'ultimo istante temporale generato (B, N, F')
+
+        out=x[:, -1, :,:]
+
+        median= self.linear1(out)
+        #Gli altri quantili sono scritti solo in forma di incremento e decremento in modo che rimangano sopra/sotto il valore della mediana
+        #softplus(x) = log(1 + e^x) consente di ottenere valori sempre positivi 
+        low_quantile= F.softplus(self.linear2(out))
+        high_quantile= F.softplus(self.linear3(out))    
+
+
+
+        return median-low_quantile, median, median+high_quantile 
+
+
+
     
-        A_norm = D_inv_sqrt @ A_sim @ D_inv_sqrt
-        L=np.eye(n_nodes)-A_norm
-        eigenvalues= np.linalg.eigvalsh(L)
-        eigenvalues.sort()
-        max_eig=eigenvalues[-1]
-        L_norm= 2*L/max_eig - np.eye(n_nodes)
 
-        
-        X = node_features.astype(np.float32)
-        
-        return torch.Tensor(L_norm), X
 
+    
 
 
 
