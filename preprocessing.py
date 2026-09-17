@@ -5,19 +5,23 @@ class Preprocessing:
         self.data_path=data_path
         self.adj_path=adj_path
 
-    def normalization(self):
+    def normalization(self, use_graph=False):
         # Caricamento Dati e Indicizzazione Temporale
         
         df = pd.read_csv(self.data_path)
         # Adiacenze
-        threshold=0.1
-        adj = pd.read_pickle(self.adj_path)
-        adj_matrix = adj[2]
-
-        adj_matrix[adj_matrix<threshold]=0.0
-       
-       
-
+        # Adiacenze
+        threshold = 0.1
+        if use_graph:
+            if self.adj_path is None:
+                raise ValueError(
+                    "use_graph=True ma non è stato fornito adj_path."
+                )
+            adj = pd.read_pickle(self.adj_path)
+            adj_matrix = adj[2].copy()
+            adj_matrix[adj_matrix < threshold] = 0.0
+        else:
+            adj_matrix = None
 
         datetime_col = df.columns[0]
         df[datetime_col] = pd.to_datetime(df[datetime_col])
