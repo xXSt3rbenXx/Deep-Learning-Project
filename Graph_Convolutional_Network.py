@@ -18,9 +18,9 @@ class GCNLayer(nn.Module):
     def forward(self, x, T):
         out_list = []
         for k, T_k in enumerate(T):
-            t_batched = T_k.unsqueeze(0).expand(x.size(0), -1, -1)   # (batch, N, N)
+            t_batched = T_k.unsqueeze(0).expand(x.size(0), -1, -1)   # (batch, N, N) Espando le dimensioni del vettore ricopiandolo lungo la grandezza del batch
             out = torch.bmm(t_batched, x)
-            out = self.linears[k](out)                                # peso specifico per k
+            out = self.linears[k](out)                                
             out_list.append(out)
         out_sum=torch.sum(torch.stack(out_list, dim=0), dim=0)         # somma SOLO sui K+1 ordini
         out_sum=F.relu(out_sum)
@@ -30,7 +30,7 @@ class GCNLayer(nn.Module):
 class GCN(nn.Module):
   
     
-    def __init__(self, input_dim,out_dim, hidden_dim,T_list, kernel_size=2, num_layers=3, dropout=0.5,):
+    def __init__(self, input_dim,out_dim, hidden_dim,T_list, kernel_size=3, num_layers=3,num_blocks=3, dropout=0.5,):
         super(GCN, self).__init__()
         
         # Store model hyperparameters.
@@ -56,10 +56,9 @@ class GCN(nn.Module):
         layers=[]
         for i in range(num_layers):
             if i== num_layers-1:
-                layers.append(TCNLayer(hidden_dim, out_dim, num_layers, kernel_size))
+                layers.append(TCNLayer(hidden_dim, out_dim, num_blocks, kernel_size))
             else:
-                layers.append(TCNLayer(hidden_dim, hidden_dim, num_layers, kernel_size))
-                
+                layers.append(TCNLayer(hidden_dim, hidden_dim, num_blocks, kernel_size))
 
         self.tcn_layers= nn.ModuleList(
             [layers[i] for i in range(num_layers)]
@@ -88,11 +87,11 @@ class GCN(nn.Module):
             F_hidden = x_gcn_out.shape[-1]
             x = x_gcn_out.reshape(B, T, N, F_hidden).permute(0, 2, 1, 3)  # torna a (B, N, T, hidden_dim)
 
-            # --- TCN: fondi batch e N ---
+            # --- TCN: fonde batch e N ---
             x_tcn_in = x.reshape(B * N, T, F_hidden).permute(0, 2, 1)     # (B*N, F, T)
             x_tcn_out = self.tcn_layers[i](x_tcn_in)                       # (B*N, F', T)
             F_out = x_tcn_out.shape[1]
-            x = x_tcn_out.reshape(B, N, F_out,T ).permute(0, 3, 1,2)       # torna a (B,  T,N, F')
+            x = x_tcn_out.reshape(B, N, F_out,T ).permute(0, 3, 1,2)       # torna a (B, T,N, F')
 
 
 

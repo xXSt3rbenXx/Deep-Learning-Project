@@ -1,6 +1,8 @@
 import torch
 from preprocessing import Preprocessing as pre
 import numpy as np
+from Graph_Convolutional_Network import GCN
+import torch.optim as optim
 
 
 
@@ -60,3 +62,53 @@ else:
 
 X_train, Y_train,X_val, Y_val, X_test, Y_test,adj,train_grouped = pre(data_path='Dataset/metr-la.csv',adj_path='Dataset/adj_Metr-LA.pkl').normalization()
 X_train, Y_train,X_val, Y_val, X_test, Y_test=torch.from_numpy(X_train).float().to(device), torch.from_numpy(Y_train).float().to(device), torch.from_numpy(X_val).float().to(device), torch.from_numpy(Y_val).float().to(device), torch.from_numpy(X_test).float().to(device), torch.from_numpy(Y_test).float().to(device)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+L,x=graph_to_matrices(X_train, adj)
+T=chebyshev_pol(L, K=2)
+epochs=10
+
+
+#Non è completo
+#Dalla documentazione di pythorch
+# Creates model and optimizer in default precision
+model = GCN(input_dim=X_train.shape[1], hidden_dim=64, out_dim=1,T_list=T).to(device)
+optimizer = optim.SGD(model.parameters())
+
+# Creates a GradScaler once at the beginning of training.
+scaler = torch.cuda.amp.GradScaler()
+
+for epoch in range(epochs):
+    for input, target in zip(x, Y_train):
+        optimizer.zero_grad()
+
+        # Runs the forward pass with autocasting.
+        with torch.cuda.amp.autocast():
+            output = model(input)
+            loss = pinball_loss([0.1, 0.5, 0.9], target, output)
+
+        # Scales loss.  Calls backward() on scaled loss to create scaled gradients.
+        # Backward passes under autocast are not recommended.
+        # Backward ops run in the same dtype autocast chose for corresponding forward ops.
+        scaler.scale(loss).backward()
+
+        # scaler.step() first unscales the gradients of the optimizer's assigned params.
+        # If these gradients do not contain infs or NaNs, optimizer.step() is then called,
+        # otherwise, optimizer.step() is skipped.
+        scaler.step(optimizer)
+
+        # Updates the scale for next iteration.
+        scaler.update()

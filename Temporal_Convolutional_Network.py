@@ -30,10 +30,7 @@ class ResidualBlock(nn.Module):
 
 class TCNLayer(nn.Module):
     def __init__(self, num_inputs, hidden_dimension, blocks, kernel_size):
-        """
-        num_channels: list of output channels for each TCN layer/block.
-        kernel_size: filter width of each 1D conv.
-        """
+
         super().__init__()
         layers = []
         in_ch = num_inputs
