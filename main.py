@@ -3,8 +3,13 @@ from preprocessing import Preprocessing as pre
 import numpy as np
 from Graph_Convolutional_Network import GCN
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 
+
+def make_loaders(train, val, batch_size):
+    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val, batch_size=batch_size, shuffle=False)
+    return train_loader, val_loader
 
 
 
@@ -77,21 +82,16 @@ X_train, Y_train,X_val, Y_val, X_test, Y_test=torch.from_numpy(X_train).float().
 
 
 
-def make_loaders(train, val, batch_size):
-    train_loader = DataLoader(train, batch_size=batch_size, shuffle=False)
-    val_loader = DataLoader(val, batch_size=batch_size, shuffle=False)
-    return train_loader, val_loader
 
 
-
-train_loader, val_loader=make_loaders(X_train, X_val, 32)
+train_loader, val_loader=make_loaders(TensorDataset(X_train.unsqueeze(-1), Y_train.permute(0, 2, 1)), TensorDataset(X_val.unsqueeze(-1), Y_val.permute(0, 2, 1)), 32)
 
 
 
 L,x=graph_to_matrices(X_train, adj)
 T=chebyshev_pol(L, K=2)
 epochs=10
-print(x.shape)
+
 
 #Non è completo
 #Dalla documentazione di pythorch
@@ -103,13 +103,13 @@ optimizer = optim.SGD(model.parameters())
 scaler = torch.amp.GradScaler()
 
 for epoch in range(epochs):
-    for input, target in zip(x, Y_train):
+    for train, label in train_loader:
         optimizer.zero_grad()
 
         # Runs the forward pass with autocasting.
         with torch.amp.autocast('cuda'):
-            output = model(input)
-            loss = pinball_loss([0.1, 0.5, 0.9], target, output)
+            output = model(train)
+            loss = pinball_loss([0.1, 0.5, 0.9], label, output)
 
         # Scales loss.  Calls backward() on scaled loss to create scaled gradients.
         # Backward passes under autocast are not recommended.
