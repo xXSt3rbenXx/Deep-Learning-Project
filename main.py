@@ -3,6 +3,7 @@ from preprocessing import Preprocessing as pre
 import numpy as np
 from Graph_Convolutional_Network import GCN
 import torch.optim as optim
+from torch.utils.data import DataLoader
 
 
 
@@ -49,6 +50,10 @@ def pinball_loss(quantiles, y, y_pred):
             total_loss += loss.mean()
       return total_loss
 
+
+
+
+
 def historical_average_baseline(train_grouped, datetime):
       #Implementare la ricerca nella lookup table già pronta con MSE loss
       pass
@@ -60,7 +65,7 @@ else:
     device=torch.device('cpu')
 
 
-X_train, Y_train,X_val, Y_val, X_test, Y_test,adj,train_grouped = pre(data_path='Dataset/metr-la.csv',adj_path='Dataset/adj_Metr-LA.pkl').normalization()
+X_train, Y_train,X_val, Y_val, X_test, Y_test,adj,train_grouped = pre(data_path='Dataset/metr-la.csv',adj_path='Dataset/adj_Metr-LA.pkl').normalization(use_graph=True)
 X_train, Y_train,X_val, Y_val, X_test, Y_test=torch.from_numpy(X_train).float().to(device), torch.from_numpy(Y_train).float().to(device), torch.from_numpy(X_val).float().to(device), torch.from_numpy(Y_val).float().to(device), torch.from_numpy(X_test).float().to(device), torch.from_numpy(Y_test).float().to(device)
 
 
@@ -72,8 +77,14 @@ X_train, Y_train,X_val, Y_val, X_test, Y_test=torch.from_numpy(X_train).float().
 
 
 
+def make_loaders(train, val, batch_size):
+    train_loader = DataLoader(train, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(val, batch_size=batch_size, shuffle=False)
+    return train_loader, val_loader
 
 
+
+train_loader, val_loader=make_loaders(X_train, X_val, 32)
 
 
 
@@ -89,14 +100,14 @@ model = GCN(input_dim=X_train.shape[1], hidden_dim=64, out_dim=1,T_list=T).to(de
 optimizer = optim.SGD(model.parameters())
 
 # Creates a GradScaler once at the beginning of training.
-scaler = torch.cuda.amp.GradScaler()
+scaler = torch.amp.GradScaler()
 
 for epoch in range(epochs):
     for input, target in zip(x, Y_train):
         optimizer.zero_grad()
 
         # Runs the forward pass with autocasting.
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast('cuda'):
             output = model(input)
             loss = pinball_loss([0.1, 0.5, 0.9], target, output)
 
