@@ -9,7 +9,7 @@ import torch.optim as optim
 
 def chebyshev_pol( L, K):
         L_shape=L.shape[0]
-        T_0= np.eye(L_shape, dtype=L.dtype)
+        T_0= torch.eye(L_shape, dtype=L.dtype)
         T_1=L
         T=[T_0, T_1]
         for i in range(2, K+1):
@@ -37,7 +37,7 @@ def graph_to_matrices(node_features, adj_matrix):
         L_norm= 2*L/max_eig - np.eye(n_nodes)
 
         
-        X = node_features.astype(np.float32)
+        X = node_features
         
         return torch.Tensor(L_norm), X
 
@@ -80,7 +80,7 @@ X_train, Y_train,X_val, Y_val, X_test, Y_test=torch.from_numpy(X_train).float().
 L,x=graph_to_matrices(X_train, adj)
 T=chebyshev_pol(L, K=2)
 epochs=10
-
+print(x.shape)
 
 #Non è completo
 #Dalla documentazione di pythorch
