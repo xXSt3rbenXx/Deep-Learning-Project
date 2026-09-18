@@ -70,24 +70,3 @@ class Temporal_Model(nn.Module):
         q90=median+high_quantile
 
         return q10, q50, q90
-
-
-#PICCOLO TESTING PER VEDERE CHE COSA ABBIAMO OTTENUTO
-from preprocessing import Preprocessing
-prep = Preprocessing(data_path='Dataset/metr-la.csv', adj_path='Dataset/adj_Metr-LA.pkl')
-X_train, Y_train, X_val, Y_val, X_test, Y_test, adj, train_grouped = prep.normalization()
-
-# 2. Conversione primo batch in PyTorch
-x_sample = torch.from_numpy(X_train[:32]).float()  # Batch da 32 campioni
-
-# 3. Inizializzazione Modello No-Graph
-model = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=2, num_layers=3)
-
-# 4. Forward Pass
-q10, q50, q90 = model(x_sample)
-
-print("--- VERIFICA DIMENSIONI INPUT E OUTPUT ---")
-print(f"Shape Input (X_sample): {x_sample.shape}")  # Dovrebbe essere (32, 12, 207)
-print(f"Shape Quantile 10 (q10): {q10.shape}")      # Dovrebbe essere (32, 207, 3)
-print(f"Shape Mediana (q50):     {q50.shape}")      # Dovrebbe essere (32, 207, 3)
-print(f"Shape Quantile 90 (q90): {q90.shape}")      # Dovrebbe essere (32, 207, 3)

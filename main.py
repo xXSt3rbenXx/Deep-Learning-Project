@@ -1,125 +1,161 @@
 import torch
-from preprocessing import Preprocessing as pre
-import numpy as np
-from Graph_Convolutional_Network import GCN
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+import numpy as np
+
+from preprocessing import Preprocessing as pre
+from Graph_Convolutional_Network import GCN
+from Temporal_Model import Temporal_Model
 
 
-def make_loaders(train, val, batch_size):
-    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val, batch_size=batch_size, shuffle=False)
+def make_loaders(train_dataset, val_dataset, batch_size=32):
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     return train_loader, val_loader
 
 
+def chebyshev_pol(L, K):
+    L_shape = L.shape[0]
+    T_0 = torch.eye(L_shape, dtype=L.dtype)
+    T_1 = L
+    T = [T_0, T_1]
+    for i in range(2, K + 1):
+        T_i = 2 * L @ T[i - 1] - T[i - 2]
+        T.append(T_i)
+    return T
 
-def chebyshev_pol( L, K):
-        L_shape=L.shape[0]
-        T_0= torch.eye(L_shape, dtype=L.dtype)
-        T_1=L
-        T=[T_0, T_1]
-        for i in range(2, K+1):
-            T_i= 2*L @ T[i-1] - T[i-2]
-            T.append(T_i)
-        return T 
+
+def graph_to_matrices(adj_matrix):
+    n_nodes = adj_matrix.shape[0]
+    A_tilde = adj_matrix.astype(np.float32)
+    A_sim = (A_tilde + A_tilde.T) / 2
+    D = np.diag(np.sum(A_sim, axis=1))
+    D_inv_sqrt = np.diag(np.power(np.diag(D), -0.5))
+
+    A_norm = D_inv_sqrt @ A_sim @ D_inv_sqrt
+    L = np.eye(n_nodes) - A_norm
+    eigenvalues = np.linalg.eigvalsh(L)
+    eigenvalues.sort()
+    max_eig = eigenvalues[-1]
+    L_norm = 2 * L / max_eig - np.eye(n_nodes)
+
+    return torch.Tensor(L_norm)
 
 
-def graph_to_matrices(node_features, adj_matrix):
-        
- 
-        n_nodes = adj_matrix.shape[0]
-        A_tilde = adj_matrix.astype(np.float32)
-        #La matrice non è simmetrica, va resa tale sacrificando informazioni sulla direzionalità
-        A_sim= (A_tilde+ A_tilde.T) / 2
-        D = np.diag(np.sum(A_sim, axis=1))
-        D_inv_sqrt = np.diag(np.power(np.diag(D), -0.5))
-        
-    
-        A_norm = D_inv_sqrt @ A_sim @ D_inv_sqrt
-        L=np.eye(n_nodes)-A_norm
-        eigenvalues= np.linalg.eigvalsh(L)
-        eigenvalues.sort()
-        max_eig=eigenvalues[-1]
-        L_norm= 2*L/max_eig - np.eye(n_nodes)
-
-        
-        X = node_features
-        
-        return torch.Tensor(L_norm), X
-
-#q=[0.1,0.5,0.9] per quando verrà sviluppato
 def pinball_loss(quantiles, y, y_pred):
-      total_loss = 0
-      for q, y_p in zip(quantiles, y_pred):
-            loss=torch.max(q*(y-y_p), (1-q)*(y_p-y))
-            total_loss += loss.mean()
-      return total_loss
+    total_loss = 0
+    for q, y_p in zip(quantiles, y_pred):
+        loss = torch.max(q * (y - y_p), (1 - q) * (y_p - y))
+        total_loss += loss.mean()
+    return total_loss
 
 
+def historical_average_baseline(y_true, y_pred_ha, quantiles=[0.1, 0.5, 0.9]):
+    # Replichiamo il valore deterministico sui 3 quantili per la Pinball Loss
+    ha_quantiles = (y_pred_ha, y_pred_ha, y_pred_ha)
+    pb_loss = pinball_loss(quantiles, y_true, ha_quantiles).item()
+
+    #definisco i tre orizzonti temporali
+    horizons_idx = [0, 1, 2]
+    horizon_names = ["Step 3 (15m)", "Step 6 (30m)", "Step 12 (60m)"]
+    mae_list, rmse_list = [], []
+
+    #calcolo le metriche per ogni orizzonte temporale - MAE e RMSE
+    for idx in horizons_idx:
+        yt = y_true[:, :, idx]
+        yp = y_pred_ha[:, :, idx]
+        mae = torch.abs(yt - yp).mean().item()
+        rmse = torch.sqrt(torch.mean((yt - yp) ** 2)).item()
+        mae_list.append(mae)
+        rmse_list.append(rmse)
+    return pb_loss, horizon_names, mae_list, rmse_list
 
 
+def train_and_eval_model(model, train_loader, val_loader, optimizer, scaler, quantiles, epochs, device, model_name='Model'):
+    print(f"\n=================== Inizio Addestramento: {model_name} ===================")
+    for epoch in range(1, epochs + 1):
+        model.train()
+        train_loss = 0.0
+        for x_train, y_train in train_loader:
+            x_train, y_train = x_train.to(device), y_train.to(device)
+            optimizer.zero_grad()
 
-def historical_average_baseline(train_grouped, datetime):
-      #Implementare la ricerca nella lookup table già pronta con MSE loss
-      pass
+            with torch.amp.autocast(device_type=device.type):
+                output = model(x_train)
+                loss = pinball_loss(quantiles, y_train, output)
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            train_loss += loss.item() * x_train.size(0)
+
+        train_loss /= len(train_loader.dataset)
+
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for x_val, y_val in val_loader:
+                x_val, y_val = x_val.to(device), y_val.to(device)
+
+                with torch.amp.autocast(device_type=device.type):
+                    output = model(x_val)
+                    loss = pinball_loss(quantiles, y_val, output)
+
+                val_loss += loss.item() * x_val.size(0)
+
+            val_loss /= len(val_loader.dataset)
+
+        print(f'{model_name} | Epoca {epoch:02d}/{epochs:02d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}')
 
 
-if torch.cuda.is_available():
-    device=torch.device('cuda')
-else:
-    device=torch.device('cpu')
+# Device Setup
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+# Preprocessing e Grafo
+prep = pre(data_path='Dataset/metr-la.csv', adj_path='Dataset/adj_Metr-LA.pkl')
+X_train, Y_train, X_val, Y_val, X_test, Y_test, adj, train_grouped = prep.normalization(use_graph=True)
 
-X_train, Y_train,X_val, Y_val, X_test, Y_test,adj,train_grouped = pre(data_path='Dataset/metr-la.csv',adj_path='Dataset/adj_Metr-LA.pkl').normalization(use_graph=True)
-X_train, Y_train,X_val, Y_val, X_test, Y_test=torch.from_numpy(X_train).float().to(device), torch.from_numpy(Y_train).float().to(device), torch.from_numpy(X_val).float().to(device), torch.from_numpy(Y_val).float().to(device), torch.from_numpy(X_test).float().to(device), torch.from_numpy(Y_test).float().to(device)
+#Matrice Laplaciana e Polinomi di Chebyshev
+L_norm = graph_to_matrices(adj).to(device)
+T = chebyshev_pol(L_norm, K=2)
 
+# 3. Trasformazione Tensori (Shape: B, T, N, F_in=1 e Target su orizzonti 3, 6, 12)
+X_train_t = torch.from_numpy(X_train).float().unsqueeze(-1)
+Y_train_t = torch.from_numpy(Y_train).float().permute(0, 2, 1)[:, :, [2, 5, 11]]
 
+X_val_t = torch.from_numpy(X_val).float().unsqueeze(-1)
+Y_val_t = torch.from_numpy(Y_val).float().permute(0, 2, 1)[:, :, [2, 5, 11]]
 
+X_test_t = torch.from_numpy(X_test).float().unsqueeze(-1)
+Y_test_t = torch.from_numpy(Y_test).float().permute(0, 2, 1)[:, :, [2, 5, 11]]
 
+#DataLoaders
+train_loader, val_loader = make_loaders(
+    TensorDataset(X_train_t, Y_train_t),
+    TensorDataset(X_val_t, Y_val_t),
+    batch_size=32
+)
 
+epochs = 10
+quantiles = [0.1, 0.5, 0.9]
 
+#Temporal Model
+model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=2, num_layers=3, dropout=0.3).to(device)
+optimizer_temporal = optim.Adam(model_temporal.parameters(), lr=0.001)
+scaler_temporal = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 
+train_and_eval_model(
+    model_temporal, train_loader, val_loader, optimizer_temporal, scaler_temporal,
+    quantiles, epochs, device, model_name="Temporal Model (No Graph)"
+)
 
+#GCN Model
+model_gcn = GCN(input_dim=1, hidden_dim=32, out_dim=1, T_list=T, kernel_size=3, num_layers=3, dropout=0.3).to(device)
+optimizer_gcn = optim.Adam(model_gcn.parameters(), lr=0.001)
+scaler_gcn = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 
-
-
-
-train_loader, val_loader=make_loaders(TensorDataset(X_train.unsqueeze(-1), Y_train.permute(0, 2, 1)), TensorDataset(X_val.unsqueeze(-1), Y_val.permute(0, 2, 1)), 32)
-
-
-
-L,x=graph_to_matrices(X_train, adj)
-T=chebyshev_pol(L, K=2)
-epochs=10
-
-
-#Non è completo
-#Dalla documentazione di pythorch
-# Creates model and optimizer in default precision
-model = GCN(input_dim=X_train.shape[1], hidden_dim=64, out_dim=1,T_list=T).to(device)
-optimizer = optim.SGD(model.parameters())
-
-# Creates a GradScaler once at the beginning of training.
-scaler = torch.amp.GradScaler()
-
-for epoch in range(epochs):
-    for train, label in train_loader:
-        optimizer.zero_grad()
-
-        # Runs the forward pass with autocasting.
-        with torch.amp.autocast('cuda'):
-            output = model(train)
-            loss = pinball_loss([0.1, 0.5, 0.9], label, output)
-
-        # Scales loss.  Calls backward() on scaled loss to create scaled gradients.
-        # Backward passes under autocast are not recommended.
-        # Backward ops run in the same dtype autocast chose for corresponding forward ops.
-        scaler.scale(loss).backward()
-
-        # scaler.step() first unscales the gradients of the optimizer's assigned params.
-        # If these gradients do not contain infs or NaNs, optimizer.step() is then called,
-        # otherwise, optimizer.step() is skipped.
-        scaler.step(optimizer)
-
-        # Updates the scale for next iteration.
-        scaler.update()
+train_and_eval_model(
+    model_gcn, train_loader, val_loader, optimizer_gcn, scaler_gcn,
+    quantiles, epochs, device, model_name="GCN Model (With Graph)"
+)
