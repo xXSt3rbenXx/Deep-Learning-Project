@@ -2,10 +2,12 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+from itertools import product
 
 from preprocessing import Preprocessing as pre
 from Graph_Convolutional_Network import GCN
 from Temporal_Model import Temporal_Model
+from Early_Stopping import EarlyStopping
 
 
 def make_loaders(train_dataset, val_dataset, batch_size=32):
@@ -16,7 +18,7 @@ def make_loaders(train_dataset, val_dataset, batch_size=32):
 
 def chebyshev_pol(L, K):
     L_shape = L.shape[0]
-    T_0 = torch.eye(L_shape, dtype=L.dtype)
+    T_0 = torch.eye(L_shape, dtype=L.dtype).to(device)
     T_1 = L
     T = [T_0, T_1]
     for i in range(2, K + 1):
@@ -30,12 +32,11 @@ def graph_to_matrices(adj_matrix):
     A_tilde = adj_matrix.astype(np.float32)
     A_sim = (A_tilde + A_tilde.T) / 2
     D = np.diag(np.sum(A_sim, axis=1))
-    D_inv_sqrt = np.diag(np.power(np.diag(D), -0.5))
+    D_inv_sqrt = np.diag(np.power(np.diag(D), -0.5, where=np.diag(D)>0)) #I valori 0 non verranno messi sotto radice per evitare np.inf
 
     A_norm = D_inv_sqrt @ A_sim @ D_inv_sqrt
     L = np.eye(n_nodes) - A_norm
     eigenvalues = np.linalg.eigvalsh(L)
-    eigenvalues.sort()
     max_eig = eigenvalues[-1]
     L_norm = 2 * L / max_eig - np.eye(n_nodes)
 
@@ -71,7 +72,7 @@ def historical_average_baseline(y_true, y_pred_ha, quantiles=[0.1, 0.5, 0.9]):
     return pb_loss, horizon_names, mae_list, rmse_list
 
 
-def train_and_eval_model(model, train_loader, val_loader, optimizer, scaler, quantiles, epochs, device, model_name='Model'):
+def train_and_eval_model(model, train_loader, val_loader, optimizer, scaler, quantiles, epochs, device, early_stopping, model_name='Model'):
     print(f"\n=================== Inizio Addestramento: {model_name} ===================")
     for epoch in range(1, epochs + 1):
         model.train()
@@ -90,6 +91,8 @@ def train_and_eval_model(model, train_loader, val_loader, optimizer, scaler, qua
 
             train_loss += loss.item() * x_train.size(0)
 
+
+        #Train loss come media pesata dei valori
         train_loss /= len(train_loader.dataset)
 
         model.eval()
@@ -105,6 +108,12 @@ def train_and_eval_model(model, train_loader, val_loader, optimizer, scaler, qua
                 val_loss += loss.item() * x_val.size(0)
 
             val_loss /= len(val_loader.dataset)
+                # Check condition
+            early_stopping.check_early_stop(val_loss)
+    
+            if early_stopping.stop_training:
+                print(f"Early stopping all'epoca {epoch}")
+                break
 
         print(f'{model_name} | Epoca {epoch:02d}/{epochs:02d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}')
 
@@ -114,10 +123,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Preprocessing e Grafo
 prep = pre(data_path='Dataset/metr-la.csv', adj_path='Dataset/adj_Metr-LA.pkl')
-X_train, Y_train, X_val, Y_val, X_test, Y_test, adj, train_grouped = prep.normalization(use_graph=True)
+X_train, Y_train, X_val, Y_val, X_test, Y_test, Y_val_ha, Y_test_ha, adj_matrix, train_grouped = prep.normalization(use_graph=True)
 
 #Matrice Laplaciana e Polinomi di Chebyshev
-L_norm = graph_to_matrices(adj).to(device)
+L_norm = graph_to_matrices(adj_matrix).to(device)
 T = chebyshev_pol(L_norm, K=2)
 
 # 3. Trasformazione Tensori (Shape: B, T, N, F_in=1 e Target su orizzonti 3, 6, 12)
@@ -144,18 +153,32 @@ quantiles = [0.1, 0.5, 0.9]
 model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=2, num_layers=3, dropout=0.3).to(device)
 optimizer_temporal = optim.Adam(model_temporal.parameters(), lr=0.001)
 scaler_temporal = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
+early_stopping = EarlyStopping(verbose=True)
 
+#Eseguo l'hyperparameter tuning solo sul modello con grafo, ci basterà semplicemente utilizzare gli stessi parametri del modello con grafo sul modello senza grafo ai fini di confronto
 train_and_eval_model(
     model_temporal, train_loader, val_loader, optimizer_temporal, scaler_temporal,
-    quantiles, epochs, device, model_name="Temporal Model (No Graph)"
+    quantiles, epochs, device, early_stopping, model_name="Temporal Model (No Graph)"
 )
 
-#GCN Model
-model_gcn = GCN(input_dim=1, hidden_dim=32, out_dim=1, T_list=T, kernel_size=3, num_layers=3, dropout=0.3).to(device)
-optimizer_gcn = optim.Adam(model_gcn.parameters(), lr=0.001)
-scaler_gcn = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
+#GCN Model hp tuning
+h_dim=[32, 64] #Tengo la hd bassa
+K=[2,3]
+learning_rates = [1e-4, 1e-3, 3e-3]
+prod=product(h_dim, K, learning_rates)
+best_hp,best_model,best_val_loss=None, None, np.inf
+for h,k,lr in prod:
+    T = chebyshev_pol(L_norm, K=k)
+    model_gcn = GCN(input_dim=1, hidden_dim=h, out_dim=1, T_list=T, kernel_size=3, num_layers=3, dropout=0.3).to(device)
+    optimizer_gcn = optim.Adam(model_gcn.parameters(), lr=lr)
+    scaler_gcn = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
+    early_stopping = EarlyStopping(verbose=True)
 
-train_and_eval_model(
-    model_gcn, train_loader, val_loader, optimizer_gcn, scaler_gcn,
-    quantiles, epochs, device, model_name="GCN Model (With Graph)"
-)
+    train_and_eval_model(
+        model_gcn, train_loader, val_loader, optimizer_gcn, scaler_gcn,
+        quantiles, epochs, device, early_stopping, model_name="GCN Model (With Graph)"
+    )
+    if early_stopping.best_loss < best_val_loss:
+        best_val_loss = early_stopping.best_loss
+        best_model = model_gcn
+        best_hp = (h, k, lr)

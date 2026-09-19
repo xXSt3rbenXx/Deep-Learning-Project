@@ -45,7 +45,7 @@ class TCNLayer(nn.Module):
 
     def forward(self, x):
         """
-        x has shape (batch_size, channels, seq_len).
+        x ha forma (batch_size, channels, seq_len).
         """
         return self.tcn(x)            # (batch, channels, seq_len)
               
