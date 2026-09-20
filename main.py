@@ -118,6 +118,37 @@ def train_and_eval_model(model, train_loader, val_loader, optimizer, scaler, qua
         print(f'{model_name} | Epoca {epoch:02d}/{epochs:02d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}')
 
 
+
+
+
+def train_tuned_model(model, train_loader, optimizer, scaler, quantiles, epochs, device, model_name='Model'):
+        print(f"\n=================== Inizio Addestramento: {model_name} ===================")
+        for epoch in range(1, epochs + 1):
+            model.train()
+            train_loss = 0.0
+            for x_train, y_train in train_loader:
+                x_train, y_train = x_train.to(device), y_train.to(device)
+                optimizer.zero_grad()
+
+                with torch.amp.autocast(device_type=device.type):
+                    output = model(x_train)
+                    loss = pinball_loss(quantiles, y_train, output)
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
+                train_loss += loss.item() * x_train.size(0)
+
+
+            #Train loss come media pesata dei valori
+            train_loss /= len(train_loader.dataset)
+
+            
+
+            print(f'{model_name} | Epoca {epoch:02d}/{epochs:02d} | Train Loss: {train_loss:.4f}')
+
+
 # Device Setup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -146,7 +177,7 @@ train_loader, val_loader = make_loaders(
     batch_size=32
 )
 
-epochs = 10 #Per il GCN probabilmente dieci epoche non bastano, bisogna aumentarle e testare
+epochs = 50 #Per il GCN probabilmente dieci epoche non bastano, bisogna aumentarle e testare
 quantiles = [0.1, 0.5, 0.9]
 
 #GCN Model hp tuning
@@ -171,11 +202,25 @@ for h,k,lr,l in prod:
         best_val_loss = early_stopping.best_loss
         best_model = model_gcn
         best_hp = (h, k, lr, l)
+        best_epochs=early_stopping.best_epoch
 
 
 
 
 (h, k, lr, l)=best_hp
+print(best_hp)
+print(best_epochs)
+
+
+T = chebyshev_pol(L_norm, K=k)
+model_gcn = GCN(input_dim=1, hidden_dim=h, out_dim=1, T_list=T, kernel_size=3, num_layers=l, dropout=0.3).to(device)
+optimizer_gcn = optim.Adam(model_gcn.parameters(), lr=lr)
+scaler_gcn = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
+train_tuned_model(
+        model_gcn, train_loader, optimizer_gcn, scaler_gcn,
+        quantiles, best_epochs, device, model_name="GCN Model Tuned (With Graph)"
+    )
+
 
 #Temporal Model
 
