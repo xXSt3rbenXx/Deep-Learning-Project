@@ -109,7 +109,7 @@ def train_and_eval_model(model, train_loader, val_loader, optimizer, scaler, qua
 
             val_loss /= len(val_loader.dataset)
                 # Check condition
-            early_stopping.check_early_stop(val_loss)
+            early_stopping.check_early_stop(val_loss,epoch)
     
             if early_stopping.stop_training:
                 print(f"Early stopping all'epoca {epoch}")
@@ -127,7 +127,7 @@ X_train, Y_train, X_val, Y_val, X_test, Y_test, Y_val_ha, Y_test_ha, adj_matrix,
 
 #Matrice Laplaciana e Polinomi di Chebyshev
 L_norm = graph_to_matrices(adj_matrix).to(device)
-T = chebyshev_pol(L_norm, K=2)
+
 
 # 3. Trasformazione Tensori (Shape: B, T, N, F_in=1 e Target su orizzonti 3, 6, 12)
 X_train_t = torch.from_numpy(X_train).float().unsqueeze(-1)
@@ -146,33 +146,22 @@ train_loader, val_loader = make_loaders(
     batch_size=32
 )
 
-epochs = 10
+epochs = 10 #Per il GCN probabilmente dieci epoche non bastano, bisogna aumentarle e testare
 quantiles = [0.1, 0.5, 0.9]
-
-#Temporal Model
-model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=2, num_layers=3, dropout=0.3).to(device)
-optimizer_temporal = optim.Adam(model_temporal.parameters(), lr=0.001)
-scaler_temporal = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
-early_stopping = EarlyStopping(verbose=True)
-
-#Eseguo l'hyperparameter tuning solo sul modello con grafo, ci basterà semplicemente utilizzare gli stessi parametri del modello con grafo sul modello senza grafo ai fini di confronto
-train_and_eval_model(
-    model_temporal, train_loader, val_loader, optimizer_temporal, scaler_temporal,
-    quantiles, epochs, device, early_stopping, model_name="Temporal Model (No Graph)"
-)
 
 #GCN Model hp tuning
 h_dim=[32, 64] #Tengo la hd bassa
 K=[2,3]
 learning_rates = [1e-4, 1e-3, 3e-3]
-prod=product(h_dim, K, learning_rates)
+layers= [2,3]
+prod=product(h_dim, K, learning_rates, layers)
 best_hp,best_model,best_val_loss=None, None, np.inf
-for h,k,lr in prod:
+for h,k,lr,l in prod:
     T = chebyshev_pol(L_norm, K=k)
-    model_gcn = GCN(input_dim=1, hidden_dim=h, out_dim=1, T_list=T, kernel_size=3, num_layers=3, dropout=0.3).to(device)
+    model_gcn = GCN(input_dim=1, hidden_dim=h, out_dim=1, T_list=T, kernel_size=3, num_layers=l, dropout=0.3).to(device)
     optimizer_gcn = optim.Adam(model_gcn.parameters(), lr=lr)
     scaler_gcn = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
-    early_stopping = EarlyStopping(verbose=True)
+    early_stopping = EarlyStopping(delta=0.001,verbose=True)
 
     train_and_eval_model(
         model_gcn, train_loader, val_loader, optimizer_gcn, scaler_gcn,
@@ -181,4 +170,23 @@ for h,k,lr in prod:
     if early_stopping.best_loss < best_val_loss:
         best_val_loss = early_stopping.best_loss
         best_model = model_gcn
-        best_hp = (h, k, lr)
+        best_hp = (h, k, lr, l)
+
+
+
+
+(h, k, lr, l)=best_hp
+
+#Temporal Model
+
+model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=h, kernel_size=2, num_layers=l, dropout=0.3).to(device)
+optimizer_temporal = optim.Adam(model_temporal.parameters(), lr=lr)
+scaler_temporal = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
+early_stopping = EarlyStopping(delta=0.001,verbose=True)
+
+#Eseguo l'hyperparameter tuning solo sul modello con grafo, ci basterà semplicemente utilizzare gli stessi parametri del modello con grafo sul modello senza grafo ai fini di confronto
+train_and_eval_model(
+    model_temporal, train_loader, val_loader, optimizer_temporal, scaler_temporal,
+    quantiles, epochs, device, early_stopping, model_name="Temporal Model (No Graph)"
+)
+
