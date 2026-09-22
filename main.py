@@ -9,6 +9,10 @@ from Graph_Convolutional_Network import GCN
 from Temporal_Model import Temporal_Model
 from Early_Stopping import EarlyStopping
 
+#Riproducibilità
+torch.manual_seed(67)
+np.random.seed(67)
+
 
 def make_loaders(train_dataset, val_dataset, batch_size=32):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -151,6 +155,7 @@ def train_tuned_model(model, train_loader, optimizer, scaler, quantiles, epochs,
 
 # Device Setup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
 
 # Preprocessing e Grafo
 prep = pre(data_path='Dataset/metr-la.csv', adj_path='Dataset/adj_Metr-LA.pkl')
@@ -235,3 +240,9 @@ train_and_eval_model(
     quantiles, epochs, device, early_stopping, model_name="Temporal Model (No Graph)"
 )
 
+#Salvo il modello per impiegarlo in fase di test
+torch.save({
+    "state_dict": model_gcn.state_dict(),
+    "hyperparameters": {"hidden_dim": h, "K": k, "num_layers": l}
+}, "gcn_final_complete.pt")
+torch.save(model_temporal.state_dict(), "temporal_final.pt")
