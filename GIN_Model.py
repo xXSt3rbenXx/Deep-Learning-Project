@@ -27,19 +27,15 @@ class GIN_Layer(nn.Module):
 
 
 class GIN(nn.Module):
-    def __init__(self, input_dim, out_dim, hidden_dim, eps, adj_matrix, kernel_size=3, num_layers=3, num_blocks=3, dropout=0.3):
+    def __init__(self, input_dim, out_dim, hidden_dim, eps, A, kernel_size=3, num_layers=3, num_blocks=3, dropout=0.3):
         super(GIN, self).__init__()
 
         self.num_layers = num_layers
         self.dropout = dropout
         self.eps = eps
 
-        # Normalizzazione dell'adiacenza per GIN: A_norm = A + I
-        N = adj_matrix.shape[0]
-        A_tilde = adj_matrix + torch.eye(N, device=adj_matrix.device)
-        D_inv = torch.diag(1.0 / (torch.sum(A_tilde, dim=1) + 1e-8))
-        A_norm = D_inv @ A_tilde
-        self.register_buffer("A_norm", A_norm)
+        # Adiacenza normalizzata
+        self.register_buffer("A_norm", A)
 
         # Layer GIN
         gin_layers = []
