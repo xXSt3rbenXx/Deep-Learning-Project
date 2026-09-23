@@ -18,10 +18,11 @@ import torch.nn.functional as F
 from Temporal_Convolutional_Network import TCNLayer
 
 class Temporal_Model(nn.Module):
-    def __init__(self, input_dim=1, out_dim=3, hidden_dim=32, kernel_size=2, num_layers=3, dropout=0.3):
+    def __init__(self, input_dim=1, out_dim=3, hidden_dim=32, kernel_size=2, num_layers=3,num_blocks=3 dropout=0.3):
         super(Temporal_Model, self).__init__()
 
         self.num_layers=num_layers
+        self.num_blocks=num_blocks
         self.dropout=dropout
 
         #Creazione strati TCN
@@ -30,7 +31,7 @@ class Temporal_Model(nn.Module):
             in_ch=input_dim if i==0 else hidden_dim
             #l'ultimo strato mantiene hidden_dim per la testa di output
             out_ch=hidden_dim
-            tcn_layers.append(TCNLayer(in_ch, out_ch, blocks=1, kernel_size=kernel_size))
+            tcn_layers.append(TCNLayer(in_ch, out_ch, blocks=num_blocks, kernel_size=kernel_size))
         self.tcn_layers=nn.ModuleList(tcn_layers)
         self.drop=nn.Dropout(dropout)
         self.l1=nn.Linear(hidden_dim, out_dim) #mediana
