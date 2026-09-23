@@ -156,6 +156,6 @@ print(f"{'GIN (Spatial)':<25} | {gin_pb:<12.4f} | {f'{gin_mae[0]:.2f}/{gin_mae[1
 print("="*80)
 
 # Salvataggio Pesi
-torch.save({"state_dict": model_gcn.state_dict(), "hyperparameters": {"hidden_dim": 32, "K": k, "num_layers": l, "lr": lr}}, "gcn_final_complete.pt")
+torch.save({"state_dict": model_gcn.state_dict(), "hyperparameters": { "K": k, "num_layers": l, "lr": lr}}, "gcn_final_complete.pt")
 torch.save(model_temporal.state_dict(), "temporal_final.pt")
-torch.save({"state_dict": model_gin.state_dict(), "hyperparameters": {"hidden_dim": 32, "eps": best_gin_eps, "num_layers": l, "lr": lr}}, "gin_final_complete.pt")
+torch.save({"state_dict": model_gin.state_dict(), "hyperparameters": { "eps": best_gin_eps, "num_layers": l, "lr": lr}}, "gin_final_complete.pt")
