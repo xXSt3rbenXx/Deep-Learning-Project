@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from Temporal_Convolutional_Network import TCNLayer
 
 class Temporal_Model(nn.Module):
-    def __init__(self, input_dim=1, out_dim=3, hidden_dim=32, kernel_size=2, num_layers=3,num_blocks=3 dropout=0.3):
+    def __init__(self, input_dim=1, out_dim=3, hidden_dim=32, kernel_size=2, num_layers=3,num_blocks=3, dropout=0.3):
         super(Temporal_Model, self).__init__()
 
         self.num_layers=num_layers
