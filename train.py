@@ -93,7 +93,7 @@ train_tuned_model(model_gcn, train_loader, optimizer_gcn, scaler_gcn, quantiles,
 gcn_pb, gcn_mae, gcn_rmse = evaluate_model_test(model_gcn, test_loader, quantiles, device, model_name="GCN Model (Spectral)")
 
 # --- 3. TEMPORAL MODEL (NO GRAPH) ---
-model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=2, num_layers=l, dropout=0.3).to(device)
+model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=3, num_layers=l, dropout=0.3).to(device)
 optimizer_temporal = optim.Adam(model_temporal.parameters(), lr=lr)
 scaler_temporal = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 early_stopping_temp = EarlyStopping(delta=0.001, verbose=True)
