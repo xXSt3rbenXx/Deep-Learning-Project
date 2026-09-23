@@ -41,7 +41,7 @@ class GIN(nn.Module):
         gin_layers = []
         for i in range(num_layers):
             in_f = input_dim if i == 0 else hidden_dim
-            gin_layers.append(GIN_Layer(in_f, hidden_dim, dropout, eps=eps))
+            gin_layers.append(GIN_Layer(in_f, hidden_dim, dropout=dropout, eps=eps))
         self.gin_layers = nn.ModuleList(gin_layers)
 
         # Strati TCN Temporali (Identici a GCN/Temporal_Model)
@@ -63,7 +63,7 @@ class GIN(nn.Module):
         for i in range(self.num_layers):
 
             x_gin_in = x.reshape(B * T, N, -1)
-            x_gin_out = self.gin_layers[i](x_gin_in, self.A_hat)
+            x_gin_out = self.gin_layers[i](x_gin_in, self.A_norm)
             F_hidden = x_gin_out.shape[-1]
             x = x_gin_out.reshape(B, T, N, F_hidden).permute(0, 2, 1, 3)
 

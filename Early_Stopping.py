@@ -19,5 +19,5 @@ class EarlyStopping:
             if self.no_improvement_count >= self.patience:
                 self.stop_training = True
                 if self.verbose:
-                    print("Stopping early as no improvement has been observed.")
+                    print("Arrestiamo prima perchè non ci sono miglioramenti.")
 
