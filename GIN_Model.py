@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from Temporal_Convolutional_Network import TCNLayer
+from torch.nn import LayerNorm
 
 
 class GIN_Layer(nn.Module):
@@ -11,10 +12,11 @@ class GIN_Layer(nn.Module):
         self.eps=eps
         self.mlp=nn.Sequential(
             nn.Linear(in_features, out_features),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(out_features, out_features)
         )
         self.dropout = dropout
+        self.layer_norm=LayerNorm(out_features)
 
     def forward(self, x, A_norm):
         #A è la matrice di adiacenza con i self_loops
@@ -22,7 +24,8 @@ class GIN_Layer(nn.Module):
         neighbor_Agg=torch.bmm(A, x)
         #formula_GIN
         out=self.mlp((1.0+self.eps)*x+neighbor_Agg)
-        out=F.relu(out)
+        out=self.layer_norm(out)
+        out=F.leaky_relu(out)
         return F.dropout(out, p=self.dropout, training=self.training)
 
 
