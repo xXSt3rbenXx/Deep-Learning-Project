@@ -59,15 +59,15 @@ def historical_average_baseline(y_true, y_pred_ha, quantiles=[0.1, 0.5, 0.9]):
     ha_quantiles = (y_pred_ha, y_pred_ha, y_pred_ha)
     pb_loss = pinball_loss(quantiles, y_true, ha_quantiles).item()
 
-    horizons_idx = [2, 5, 11]  # Corrispondono a 15m, 30m, 60m
+    horizons_idx = [0,1,2] 
     horizon_names = ["Step 3 (15m)", "Step 6 (30m)", "Step 12 (60m)"]
     mae_list, rmse_list = [], []
 
     print(f"\n=================== Baseline: Historical Average (Test Set) ===================")
     print(f"Pinball Loss (Test): {pb_loss:.4f}")
     for idx, h_name in zip(horizons_idx, horizon_names):
-        yt = y_true[:, idx, :]      # (num_samples, num_sensors) -- ora seleziona il TIMESTEP giusto
-        yp = y_pred_ha[:, idx, :]   # stessa correzione per la predizione HA
+        yt = y_true[:, :,idx]      # (num_sensori, num_samples) 
+        yp = y_pred_ha[:, :,idx]   # stessa correzione per la predizione HA
         mae = torch.abs(yt - yp).mean().item()
         rmse = torch.sqrt(torch.mean((yt - yp) ** 2)).item()
         mae_list.append(mae)

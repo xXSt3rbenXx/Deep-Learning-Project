@@ -41,6 +41,8 @@ Y_val_t = torch.from_numpy(Y_val).float().permute(0, 2, 1)[:, :, [2, 5, 11]]
 X_test_t = torch.from_numpy(X_test).float().unsqueeze(-1)
 Y_test_t = torch.from_numpy(Y_test).float().permute(0, 2, 1)[:, :, [2, 5, 11]]
 
+Y_test_ha = torch.from_numpy(Y_test_ha).float().permute(0, 2, 1)[:, :, [2, 5, 11]]   
+
 # DataLoaders (Incluso test_loader)
 train_loader, val_loader, test_loader = make_loaders(
     TensorDataset(X_train_t, Y_train_t),
@@ -53,7 +55,7 @@ epochs = 50
 quantiles = [0.1, 0.5, 0.9]
 
 # --- 1. BASELINE HISTORICAL AVERAGE ---
-ha_pb, ha_mae, ha_rmse = historical_average_baseline(Y_test, Y_test_ha, quantiles=quantiles)
+ha_pb, ha_mae, ha_rmse = historical_average_baseline(Y_test_t, Y_test_ha, quantiles=quantiles)
 
 # --- 2. GCN MODEL HP TUNING ---
 
