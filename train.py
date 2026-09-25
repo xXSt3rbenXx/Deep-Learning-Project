@@ -108,43 +108,41 @@ temp_pb, temp_mae, temp_rmse = evaluate_model_test(model_temporal, test_loader, 
 
 # --- 4. GIN MODEL (SPATIAL GRAPH) ---
 eps_candidates = [1e-4, 1e-3, 1e-2]
-
-best_gin_eps = None
 best_gin_val_loss = np.inf
+best_gin_hp = None
 best_gin_epochs = 0
 
-for eps in eps_candidates:
-    model_gin = GIN(
-        input_dim=1, out_dim=1, hidden_dim=32, A=A_norm,
-        kernel_size=3, num_layers=l, dropout=0.3, eps=eps
-    ).to(device)
-
+prod = product(eps_candidates, learning_rates, layers)
+for eps, lr, l in prod:
+    print(f"\nIperparametri attuali GIN, eps={eps}, lr={lr}, layers={l}")
+    torch.manual_seed(67)
+    np.random.seed(67)
+    model_gin = GIN(input_dim=1, hidden_dim=32, out_dim=1, A=A_norm,
+                     kernel_size=3, num_layers=l, dropout=0.3, eps=eps).to(device)
     optimizer_gin = optim.Adam(model_gin.parameters(), lr=lr)
     scaler_gin = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
-    early_stopping_gin = EarlyStopping(delta=0.001, verbose=True)
+    early_stopping = EarlyStopping(delta=0.001, verbose=True)
 
     train_and_eval_model(
         model_gin, train_loader, val_loader, optimizer_gin, scaler_gin,
-        quantiles, epochs, device, early_stopping_gin, model_name=f"GIN Model (eps={eps})"
+        quantiles, epochs, device, early_stopping, model_name="GIN Model Tuning"
     )
+    if early_stopping.best_loss < best_gin_val_loss:
+        best_gin_val_loss = early_stopping.best_loss
+        best_gin_hp = (eps, lr, l)
+        best_gin_epochs = early_stopping.best_epoch
 
-    if early_stopping_gin.best_loss < best_gin_val_loss:
-        best_gin_val_loss = early_stopping_gin.best_loss
-        best_gin_eps = eps
-        best_gin_epochs = early_stopping_gin.best_epoch
+eps, lr, l = best_gin_hp
 
-# Addestramento Finale e Valutazione Test GIN
-model_gin = GIN(
-    input_dim=1, out_dim=1, hidden_dim=32, A=A_norm,
-    kernel_size=3, num_layers=l, dropout=0.3, eps=best_gin_eps
-).to(device)
-
+torch.manual_seed(67)
+np.random.seed(67)
+model_gin = GIN(input_dim=1, out_dim=1, hidden_dim=32, A=A_norm,
+                kernel_size=3, num_layers=l, dropout=0.3, eps=eps).to(device)
 optimizer_gin = optim.Adam(model_gin.parameters(), lr=lr)
 scaler_gin = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 
 train_tuned_model(model_gin, train_loader, optimizer_gin, scaler_gin, quantiles, best_gin_epochs, device, model_name="GIN Tuned")
 gin_pb, gin_mae, gin_rmse = evaluate_model_test(model_gin, test_loader, quantiles, device, model_name="GIN Model (Spatial)")
-
 # --- TABELLA RIASSUNTIVA FINALE SUL TEST SET ---
 print("\n" + "="*80)
 print("                       RIEPILOGO METRICHE TEST SET")
@@ -160,4 +158,4 @@ print("="*80)
 # Salvataggio Pesi
 torch.save({"state_dict": model_gcn.state_dict(), "hyperparameters": { "K": k, "num_layers": l, "lr": lr}}, "gcn_final_complete.pt")
 torch.save(model_temporal.state_dict(), "temporal_final.pt")
-torch.save({"state_dict": model_gin.state_dict(), "hyperparameters": { "eps": best_gin_eps, "num_layers": l, "lr": lr}}, "gin_final_complete.pt")
+torch.save({"state_dict": model_gin.state_dict(), "hyperparameters": { "eps": eps, "num_layers": l, "lr": lr}}, "gin_final_complete.pt")
