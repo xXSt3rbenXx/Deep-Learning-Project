@@ -106,7 +106,8 @@ train_and_eval_model(
     quantiles, epochs, device, early_stopping_temp, model_name="Temporal Model (No Graph)"
 )
 temp_pb, temp_mae, temp_rmse = evaluate_model_test(model_temporal, test_loader, quantiles, device, model_name="Temporal Model (No Graph)")
-
+print(f"\nMigliori Iperparametri Temporal Model: lr={lr}, layers={l}.")
+temporal_hp = { "num_layers": l, "lr": lr}
 # --- 4. GIN MODEL (SPATIAL GRAPH) ---
 eps_candidates = [1e-4, 1e-3, 1e-2]
 best_gin_val_loss = np.inf
@@ -137,8 +138,7 @@ eps, lr, l = best_gin_hp
 print(f"\nMigliori Iperparametri GIN: Eps={eps}, lr={lr}, layers={l} | Epoche: {best_gin_epochs}")
 gin_hp = {"eps": eps, "num_layers": l, "lr": lr}
 
-torch.manual_seed(67)
-np.random.seed(67)
+
 model_gin = GIN(input_dim=1, out_dim=1, hidden_dim=32, A=A_norm,
                 kernel_size=3, num_layers=l, dropout=0.3, eps=eps).to(device)
 optimizer_gin = optim.Adam(model_gin.parameters(), lr=lr)
@@ -160,5 +160,5 @@ print("="*80)
 
 # Salvataggio Pesi
 torch.save({"state_dict": model_gcn.state_dict(), "hyperparameters": gcn_hp}, "gcn_final_complete.pt")
-torch.save(model_temporal.state_dict(), "temporal_final.pt")
+torch.save({"state_dict": model_temporal.state_dict(), "hyperparameters": temporal_hp}, "temporal_final.pt")
 torch.save({"state_dict": model_gin.state_dict(), "hyperparameters": gin_hp}, "gin_final_complete.pt")
