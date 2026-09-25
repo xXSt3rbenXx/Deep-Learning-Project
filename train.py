@@ -63,7 +63,7 @@ K = [2, 3]
 learning_rates = [1e-4, 1e-3]
 layers = [2, 3]
 prod = product( K, learning_rates, layers)
-best_hp, best_model, best_val_loss = None, None, np.inf
+best_hp, best_val_loss = None, np.inf
 
 for  k, lr, l in prod:
     print(f"\nIperparametri attuali GCN: K={k}, lr={lr}, layers={l}")
@@ -84,6 +84,7 @@ for  k, lr, l in prod:
 
 (k, lr, l) = best_hp
 print(f"\nMigliori Iperparametri GCN: K={k}, lr={lr}, layers={l} | Epoche: {best_epochs}")
+gcn_hp = {"K": k, "num_layers": l, "lr": lr}
 
 # Addestramento Finale e Valutazione Test GCN
 T = chebyshev_pol(L_norm, K=k, device=device)
@@ -133,6 +134,8 @@ for eps, lr, l in prod:
         best_gin_epochs = early_stopping.best_epoch
 
 eps, lr, l = best_gin_hp
+print(f"\nMigliori Iperparametri GIN: Eps={eps}, lr={lr}, layers={l} | Epoche: {best_gin_epochs}")
+gin_hp = {"eps": eps, "num_layers": l, "lr": lr}
 
 torch.manual_seed(67)
 np.random.seed(67)
@@ -156,6 +159,6 @@ print(f"{'GIN (Spatial)':<25} | {gin_pb:<12.4f} | {f'{gin_mae[0]:.2f}/{gin_mae[1
 print("="*80)
 
 # Salvataggio Pesi
-torch.save({"state_dict": model_gcn.state_dict(), "hyperparameters": { "K": k, "num_layers": l, "lr": lr}}, "gcn_final_complete.pt")
+torch.save({"state_dict": model_gcn.state_dict(), "hyperparameters": gcn_hp}, "gcn_final_complete.pt")
 torch.save(model_temporal.state_dict(), "temporal_final.pt")
-torch.save({"state_dict": model_gin.state_dict(), "hyperparameters": { "eps": eps, "num_layers": l, "lr": lr}}, "gin_final_complete.pt")
+torch.save({"state_dict": model_gin.state_dict(), "hyperparameters": gin_hp}, "gin_final_complete.pt")
