@@ -1,6 +1,7 @@
 import torch 
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import LayerNorm
 from Temporal_Convolutional_Network import TCNLayer
 
 
@@ -14,6 +15,7 @@ class GCNLayer(nn.Module):
             [nn.Linear(in_features, out_features) for _ in range(K + 1)]  # un peso per ordine
         )
         self.dropout = dropout
+        self.layer_norm=LayerNorm(out_features)
 
     def forward(self, x, T):
         out_list = []
@@ -23,6 +25,7 @@ class GCNLayer(nn.Module):
             out = self.linears[k](out)                                
             out_list.append(out)
         out_sum=torch.sum(torch.stack(out_list, dim=0), dim=0)         # somma SOLO sui K+1 ordini
+        out_sum=self.layer_norm(out_sum)
         out_sum=F.relu(out_sum)
         return  F.dropout(out_sum, p=self.dropout, training=self.training)
 
