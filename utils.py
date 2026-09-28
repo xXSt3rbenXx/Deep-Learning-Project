@@ -1,8 +1,7 @@
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
-
-
+import matplotlib.pytplot as plt
 
 
 
@@ -184,4 +183,70 @@ def evaluate_model_test(model, test_loader, quantiles, device, model_name="Model
 
     return test_pb_loss, mae_list, rmse_list
 
+def plot_training_curves(train_losses, val_losses, test_losses=None, model_name='Modello', save_path=None):
+    plt.figure(figsize=(8,5))
+    plt.plot(train_losses, label='Train Loss', color='blue', linewidth=2)
+    plt.plot(val_losses, label='Val Loss', color='orange', linestyle='--', linewidth=2)
 
+    if test_losses is not None:
+        if isinstance(test_losses, (list, np.ndarray)):
+            plt.plot(test_losses, label='Test Loss', color='green', linestyle='-.', linewidth=2)
+        elif isinstance(test_losses, (int, float)):
+            #questo serve èer vedere se la Test Loss è un valore singolo alla fine del training
+            plt.axhline(test_losses, label=f"Test Loss Finale ({test_losses:.4f})", color='green', linestyle='-.', linewidth=2)
+
+    plt.title(f'Curva di Addestramento - {model_name}')
+    plt.xlabel('Epoche')
+    plt.ylabel('Loss')
+    plt.grid(True, linestyle=':', alpha=0.6)
+    plt.legend()
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+        print(f"Grafico salvato in: {save_path}")
+    plt.show()
+
+def plot_model_comparison(metrics_dict,  horizon_steps=[3, 6, 12], save_path=None):
+    #confronto il modello su più metriche contemporaneamente
+    num_metrics=len(metrics_dict)
+    fig, axes=plt.subplots(1, num_metrics, figsize=(6*num_metrics, 5), sharex=True)
+    if num_metrics==1:
+        axes=[axes]
+    width=0.2
+    x=np.arange(len(horizon_steps))
+    for ax, (metric_name, models) in zip(axes, metrics_dict.items()):
+        num_models=len(models)
+        for i, (model_name, values) in enumerate(models.items()):
+            ax.bar(
+                x+i*width-(width*num_models/2),
+                values, width, label=model_name
+            )
+        ax.set_xlabel("Orizzonte (Step Temporali)")
+        ax.set_ylabel(metric_name)
+        ax.set_title(f"Confronto {metric_name}")
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"Step {s} ({s * 5}m)" for s in horizon_steps])
+        ax.legend()
+        ax.grid(axis="y", linestyle=":", alpha=0.7)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+        print(f"Grafico salvato in: {save_path}")
+    plt.show()
+
+def plot_quantile_predictions(y_true, q10, q50, q90, sensor_idx=0, num_steps=100, save_path=None):
+    plt.figure(figsize=(12,6))
+    time_axis=np.arange(num_steps)
+    plt.plot(time_axis, y_true[:num_steps, sensor_idx], label='Valore Reale', color='black', linewidth=1.5)
+    plt.plot(time_axis, q50[:num_steps, sensor_idx], label='Q50', color='blue', linewidth=2)
+    plt.fill_between(time_axis, q10[:num_steps, sensor_idx], q90[:num_steps, sensor_idx], color='blue', alpha=0.2, label='Intervallo 80% (q10-q50')
+    plt.tile(f'Predizione Quantilica - Sensor #{sensor_idx}')
+    plt.xlabel('Passi Temporali')
+    plt.ylabel('Valore')
+    plt.legend()
+    plt.grid(True, linestyle=':', alpha=0.6)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+        print(f"Grafico salvato in: {save_path}")
+    plt.show()
