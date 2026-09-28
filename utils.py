@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
-import matplotlib.pytplot as plt
+import matplotlib.pyplot as plt
 
 
 
@@ -218,7 +218,7 @@ def plot_model_comparison(metrics_dict,  horizon_steps=[3, 6, 12], save_path=Non
         num_models=len(models)
         for i, (model_name, values) in enumerate(models.items()):
             ax.bar(
-                x+i*width-(width*num_models/2),
+                x+(i - (num_models-1)/2) * width,
                 values, width, label=model_name
             )
         ax.set_xlabel("Orizzonte (Step Temporali)")
@@ -239,8 +239,8 @@ def plot_quantile_predictions(y_true, q10, q50, q90, sensor_idx=0, num_steps=100
     time_axis=np.arange(num_steps)
     plt.plot(time_axis, y_true[:num_steps, sensor_idx], label='Valore Reale', color='black', linewidth=1.5)
     plt.plot(time_axis, q50[:num_steps, sensor_idx], label='Q50', color='blue', linewidth=2)
-    plt.fill_between(time_axis, q10[:num_steps, sensor_idx], q90[:num_steps, sensor_idx], color='blue', alpha=0.2, label='Intervallo 80% (q10-q50')
-    plt.tile(f'Predizione Quantilica - Sensor #{sensor_idx}')
+    plt.fill_between(time_axis, q10[:num_steps, sensor_idx], q90[:num_steps, sensor_idx], color='blue', alpha=0.2, label='Intervallo 80% (q10-q90')
+    plt.title(f'Predizione Quantilica - Sensor #{sensor_idx}')
     plt.xlabel('Passi Temporali')
     plt.ylabel('Valore')
     plt.legend()
