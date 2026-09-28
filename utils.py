@@ -279,8 +279,7 @@ def plot_model_comparison(metrics_dict,  horizon_steps=[3, 6, 12], save_path=Non
         print(f"Grafico salvato in: {save_path}")
     plt.show()
 
-def plot_quantile_predictions(y_true,q10,q50,q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="Model",save_path=None
-):
+def plot_quantile_predictions(y_true,q10,q50,q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="Model",save_path=None):
     if torch.is_tensor(y_true):
         y_true = y_true.numpy()
     if torch.is_tensor(q10):
@@ -316,5 +315,10 @@ def plot_quantile_predictions(y_true,q10,q50,q90,sensor_idx=0,horizon_idx=0,num_
     plt.grid(True, linestyle=":", alpha=0.6)
     plt.tight_layout()
     if save_path:
+        import os
+        folder=os.path.dirname(save_path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
         plt.savefig(save_path, dpi=300,bbox_inches="tight")
+        print(f'Grafico salvato in :{save_path}')
     plt.show()

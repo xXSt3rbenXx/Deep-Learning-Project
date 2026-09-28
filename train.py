@@ -93,19 +93,15 @@ optimizer_gcn = optim.Adam(model_gcn.parameters(), lr=lr)
 scaler_gcn = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 
 train_tuned_model(model_gcn, train_loader, optimizer_gcn, scaler_gcn, quantiles, best_epochs, device, model_name="GCN Tuned")
-gcn_pb, gcn_mae, gcn_rmse = evaluate_model_test(model_gcn, test_loader, quantiles, device, model_name="GCN Model (Spectral)")
-
+gcn_pb, gcn_mae, gcn_rmse, gcn_targets, gcn_q10, gcn_q50, gcn_q90 = evaluate_model_test(model_gcn,test_loader,quantiles,device,model_name="GCN Model (Spectral)")
 # --- 3. TEMPORAL MODEL (NO GRAPH) ---
 model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=3, num_layers=l, dropout=0.3).to(device)
 optimizer_temporal = optim.Adam(model_temporal.parameters(), lr=lr)
 scaler_temporal = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 early_stopping_temp = EarlyStopping(delta=0.001, verbose=True)
 
-train_and_eval_model(
-    model_temporal, train_loader, val_loader, optimizer_temporal, scaler_temporal,
-    quantiles, epochs, device, early_stopping_temp, model_name="Temporal Model (No Graph)"
-)
-temp_pb, temp_mae, temp_rmse = evaluate_model_test(model_temporal, test_loader, quantiles, device, model_name="Temporal Model (No Graph)")
+temp_train_losses, temp_val_losses = train_and_eval_model(model_temporal,train_loader,val_loader,optimizer_temporal,scaler_temporal,quantiles,epochs,device,early_stopping_temp,model_name="Temporal Model (No Graph)")
+temp_pb, temp_mae, temp_rmse, temp_targets, temp_q10, temp_q50, temp_q90 = evaluate_model_test(model_temporal,test_loader,quantiles,device,model_name="Temporal Model (No Graph)")
 print(f"\nMigliori Iperparametri Temporal Model: lr={lr}, layers={l}.")
 temporal_hp = { "num_layers": l, "lr": lr}
 # --- 4. GIN MODEL (SPATIAL GRAPH) ---
@@ -145,9 +141,15 @@ optimizer_gin = optim.Adam(model_gin.parameters(), lr=lr)
 scaler_gin = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 
 train_tuned_model(model_gin, train_loader, optimizer_gin, scaler_gin, quantiles, best_gin_epochs, device, model_name="GIN Tuned")
-gin_pb, gin_mae, gin_rmse = evaluate_model_test(model_gin, test_loader, quantiles, device, model_name="GIN Model (Spatial)")
-# --- TABELLA RIASSUNTIVA FINALE SUL TEST SET ---
-print("\n" + "="*80)
+gin_pb, gin_mae, gin_rmse, gin_targets, gin_q10, gin_q50, gin_q90 = evaluate_model_test(model_gin,test_loader,quantiles,device,model_name="GIN Model (Spatial)")
+
+#PLOT PREDIZIONI CON INTERVALLO DI CONFIDENZA
+plot_quantile_predictions(gcn_targets,gcn_q10,gcn_q50,gcn_q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="GCN",save_path="plots/gcn_predictions.png")
+plot_quantile_predictions(temp_targets,temp_q10,temp_q50,temp_q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="Temporal",save_path="plots/temporal_predictions.png")
+plot_quantile_predictions(gin_targets,gin_q10,gin_q50,gin_q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="GIN",save_path="plots/gin_predictions.png")
+
+
+# --- TABELLA RIASSUNTIVA FINALE SUL TEST SET ---print("\n" + "="*80)
 print("                       RIEPILOGO METRICHE TEST SET")
 print("="*80)
 print(f"{'Modello':<25} | {'Pinball Loss':<12} | {'MAE (15m/30m/60m)':<22} | {'RMSE (15m/30m/60m)'}")
