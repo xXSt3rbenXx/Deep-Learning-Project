@@ -76,49 +76,57 @@ def historical_average_baseline(y_true, y_pred_ha, quantiles=[0.1, 0.5, 0.9]):
     return pb_loss, mae_list, rmse_list
 
 
-def train_and_eval_model(model, train_loader, val_loader, optimizer, scaler, quantiles, epochs, device, early_stopping, model_name='Model'):
+def train_and_eval_model(
+    model, train_loader, val_loader, optimizer, scaler,
+    quantiles, epochs, device, early_stopping, model_name='Model'
+):
     print(f"\n=================== Inizio Addestramento: {model_name} ===================")
+    train_losses = []
+    val_losses = []
     for epoch in range(1, epochs + 1):
         model.train()
         train_loss = 0.0
         for x_train, y_train in train_loader:
-            x_train, y_train = x_train.to(device), y_train.to(device)
+            x_train = x_train.to(device)
+            y_train = y_train.to(device)
+
             optimizer.zero_grad()
 
             with torch.amp.autocast(device_type=device.type):
                 output = model(x_train)
                 loss = pinball_loss(quantiles, y_train, output)
-
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
-
             train_loss += loss.item() * x_train.size(0)
-
         train_loss /= len(train_loader.dataset)
-
         model.eval()
         val_loss = 0.0
+
         with torch.no_grad():
             for x_val, y_val in val_loader:
-                x_val, y_val = x_val.to(device), y_val.to(device)
-
+                x_val = x_val.to(device)
+                y_val = y_val.to(device)
                 with torch.amp.autocast(device_type=device.type):
                     output = model(x_val)
                     loss = pinball_loss(quantiles, y_val, output)
-
                 val_loss += loss.item() * x_val.size(0)
+        val_loss /= len(val_loader.dataset)
 
-            val_loss /= len(val_loader.dataset)
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        early_stopping.check_early_stop(val_loss, epoch)
+        print(
+            f'{model_name} | '
+            f'Epoca {epoch:02d}/{epochs:02d} | '
+            f'Train Loss: {train_loss:.4f} | '
+            f'Val Loss: {val_loss:.4f}'
+        )
+        if early_stopping.stop_training:
+            print(f"Early stopping all'epoca {epoch}")
+            break
 
-            early_stopping.check_early_stop(val_loss, epoch)
-
-            if early_stopping.stop_training:
-                print(f"Early stopping all'epoca {epoch}")
-                break
-
-        print(f'{model_name} | Epoca {epoch:02d}/{epochs:02d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}')
-
+    return train_losses, val_losses
 
 def train_tuned_model(model, train_loader, optimizer, scaler, quantiles, epochs, device, model_name='Model'):
     print(f"\n=================== Inizio Addestramento Finale: {model_name} ===================")
@@ -143,67 +151,104 @@ def train_tuned_model(model, train_loader, optimizer, scaler, quantiles, epochs,
         print(f'{model_name} | Epoca {epoch:02d}/{epochs:02d} | Train Loss: {train_loss:.4f}')
 
 
-def evaluate_model_test(model, test_loader, quantiles, device, model_name="Model"):
-    """Valuta il modello addestrato sul Test Set calcolando Pinball Loss, MAE e RMSE sui 3 orizzonti."""
+def evaluate_model_test(model,test_loader,quantiles,device,model_name="Model"):
     model.eval()
     total_pb_loss = 0.0
-    all_preds = []
+    all_q10 = []
+    all_q50 = []
+    all_q90 = []
     all_targets = []
-
     with torch.no_grad():
         for x_test, y_test in test_loader:
-            x_test, y_test = x_test.to(device), y_test.to(device)
+            x_test = x_test.to(device)
+            y_test = y_test.to(device)
             with torch.amp.autocast(device_type=device.type):
                 output = model(x_test)
-                loss = pinball_loss(quantiles, y_test, output)
+                loss = pinball_loss(
+                    quantiles,
+                    y_test,
+                    output
+                    )
 
             total_pb_loss += loss.item() * x_test.size(0)
-            all_preds.append(output[1].cpu())  # Usiamo il quantile mediano (q50) per MAE/RMSE
+            # Salviamo tutti i quantili
+            all_q10.append(output[0].cpu())
+            all_q50.append(output[1].cpu())
+            all_q90.append(output[2].cpu())
+
             all_targets.append(y_test.cpu())
-
     test_pb_loss = total_pb_loss / len(test_loader.dataset)
-    preds_cat = torch.cat(all_preds, dim=0)
-    targets_cat = torch.cat(all_targets, dim=0)
-
+    q10 = torch.cat(all_q10, dim=0)
+    q50 = torch.cat(all_q50, dim=0)
+    q90 = torch.cat(all_q90, dim=0)
+    targets = torch.cat(all_targets, dim=0)
     horizons_idx = [0, 1, 2]
-    horizon_names = ["Step 3 (15m)", "Step 6 (30m)", "Step 12 (60m)"]
-
-    print(f"\n---------------- Valutazione Test Set: {model_name} ----------------")
+    horizon_names = [
+        "Step 3 (15m)",
+        "Step 6 (30m)",
+        "Step 12 (60m)"
+    ]
+    print(
+        f"\n---------------- Valutazione Test Set: "
+        f"{model_name} ----------------"
+    )
     print(f"Pinball Loss (Test): {test_pb_loss:.4f}")
-
-    mae_list, rmse_list = [], []
+    mae_list = []
+    rmse_list = []
     for idx, h_name in zip(horizons_idx, horizon_names):
-        yt = targets_cat[:, :, idx]
-        yp = preds_cat[:, :, idx]
+        yt = targets[:, :, idx]
+        yp = q50[:, :, idx]
         mae = torch.abs(yt - yp).mean().item()
-        rmse = torch.sqrt(torch.mean((yt - yp) ** 2)).item()
+        rmse = torch.sqrt(
+            torch.mean((yt - yp) ** 2)
+        ).item()
         mae_list.append(mae)
         rmse_list.append(rmse)
-        print(f"[{h_name}] MAE: {mae:.4f} | RMSE: {rmse:.4f}")
+        print(
+            f"[{h_name}] "
+            f"MAE: {mae:.4f} | "
+            f"RMSE: {rmse:.4f}"
+        )
+    return (
+        test_pb_loss,
+        mae_list,
+        rmse_list,
+        targets,
+        q10,
+        q50,
+        q90
+        )
 
-    return test_pb_loss, mae_list, rmse_list
-
-def plot_training_curves(train_losses, val_losses, test_losses=None, model_name='Modello', save_path=None):
-    plt.figure(figsize=(8,5))
-    plt.plot(train_losses, label='Train Loss', color='blue', linewidth=2)
-    plt.plot(val_losses, label='Val Loss', color='orange', linestyle='--', linewidth=2)
-
-    if test_losses is not None:
-        if isinstance(test_losses, (list, np.ndarray)):
-            plt.plot(test_losses, label='Test Loss', color='green', linestyle='-.', linewidth=2)
-        elif isinstance(test_losses, (int, float)):
-            #questo serve èer vedere se la Test Loss è un valore singolo alla fine del training
-            plt.axhline(test_losses, label=f"Test Loss Finale ({test_losses:.4f})", color='green', linestyle='-.', linewidth=2)
-
-    plt.title(f'Curva di Addestramento - {model_name}')
-    plt.xlabel('Epoche')
-    plt.ylabel('Loss')
+def plot_training_curves(
+    train_losses,
+    val_losses,
+    model_name='Modello',
+    save_path=None
+):
+    epochs = np.arange(1, len(train_losses) + 1)
+    plt.figure(figsize=(9, 5))
+    plt.plot(
+        epochs,
+        train_losses,
+        label='Train Loss',
+        linewidth=2
+    )
+    plt.plot(
+        epochs,
+        val_losses,
+        label='Validation Loss',
+        linestyle='--',
+        linewidth=2
+    )
+    plt.xlabel('Epoca')
+    plt.ylabel('Pinball Loss')
+    plt.title(f'Training e Validation Loss - {model_name}')
+    plt.xticks(epochs[::max(1, len(epochs)//10)])
     plt.grid(True, linestyle=':', alpha=0.6)
     plt.legend()
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=300)
-        print(f"Grafico salvato in: {save_path}")
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.show()
 
 def plot_model_comparison(metrics_dict,  horizon_steps=[3, 6, 12], save_path=None):
@@ -234,19 +279,42 @@ def plot_model_comparison(metrics_dict,  horizon_steps=[3, 6, 12], save_path=Non
         print(f"Grafico salvato in: {save_path}")
     plt.show()
 
-def plot_quantile_predictions(y_true, q10, q50, q90, sensor_idx=0, num_steps=100, save_path=None):
-    plt.figure(figsize=(12,6))
-    time_axis=np.arange(num_steps)
-    plt.plot(time_axis, y_true[:num_steps, sensor_idx], label='Valore Reale', color='black', linewidth=1.5)
-    plt.plot(time_axis, q50[:num_steps, sensor_idx], label='Q50', color='blue', linewidth=2)
-    plt.fill_between(time_axis, q10[:num_steps, sensor_idx], q90[:num_steps, sensor_idx], color='blue', alpha=0.2, label='Intervallo 80% (q10-q90')
-    plt.title(f'Predizione Quantilica - Sensor #{sensor_idx}')
-    plt.xlabel('Passi Temporali')
-    plt.ylabel('Valore')
+def plot_quantile_predictions(y_true,q10,q50,q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="Model",save_path=None
+):
+    if torch.is_tensor(y_true):
+        y_true = y_true.numpy()
+    if torch.is_tensor(q10):
+        q10 = q10.numpy()
+    if torch.is_tensor(q50):
+        q50 = q50.numpy()
+    if torch.is_tensor(q90):
+        q90 = q90.numpy()
+    n = min(num_steps, y_true.shape[0])
+    time_axis = np.arange(n)
+    true_values = y_true[:n, sensor_idx, horizon_idx]
+    lower = q10[:n, sensor_idx, horizon_idx]
+    median = q50[:n, sensor_idx, horizon_idx]
+    upper = q90[:n, sensor_idx, horizon_idx]
+
+    horizon_names = [
+        "15 minuti",
+        "30 minuti",
+        "60 minuti"
+    ]
+
+    plt.figure(figsize=(12, 6))
+    plt.plot(time_axis, true_values, label="Valore reale",linewidth=1.5)
+    plt.plot( time_axis,median, label="Q50", linewidth=2)
+    plt.fill_between(time_axis,lower,upper, alpha=0.2,label="Intervallo 80% (Q10-Q90)")
+
+    plt.title( f"{model_name} - Sensore {sensor_idx} - "
+               f"Orizzonte {horizon_names[horizon_idx]}"
+    )
+    plt.xlabel("Passo temporale")
+    plt.ylabel("Valore")
     plt.legend()
-    plt.grid(True, linestyle=':', alpha=0.6)
+    plt.grid(True, linestyle=":", alpha=0.6)
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=300)
-        print(f"Grafico salvato in: {save_path}")
+        plt.savefig(save_path, dpi=300,bbox_inches="tight")
     plt.show()
