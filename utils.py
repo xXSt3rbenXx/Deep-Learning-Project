@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
-
+import os
 
 def denormalize(x, mean, std):
     return x*std+mean
@@ -252,7 +252,11 @@ def plot_training_curves(
     plt.legend()
     plt.tight_layout()
     if save_path:
+        folder=os.path.dirname(save_path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f'Grafico Salvato in: {save_path}')
     plt.show()
 
 def plot_model_comparison(metrics_dict,  horizon_steps=[3, 6, 12], save_path=None):
@@ -279,10 +283,12 @@ def plot_model_comparison(metrics_dict,  horizon_steps=[3, 6, 12], save_path=Non
         ax.grid(axis="y", linestyle=":", alpha=0.7)
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=300)
-        print(f"Grafico salvato in: {save_path}")
+        folder=os.path.dirname(save_path)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f'Grafico Salvato in: {save_path}')
     plt.show()
-
 def plot_quantile_predictions(y_true, q10, q50, q90, sensor_idx=0, horizon_idx=0,
                                num_steps=100, start_idx=0, model_name="Model",
                                mean=None, std=None, period_label='Normal', save_path=None):
