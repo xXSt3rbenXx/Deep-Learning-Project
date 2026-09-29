@@ -195,6 +195,7 @@ plot_model_comparison(
     },
     save_path='plots/model_comparison.png'
 )
+
 temp_cov, temp_width, _ = compute_calibration_metrics(temp_targets, temp_q10, temp_q90)
 gcn_cov, gcn_width, _ = compute_calibration_metrics(gcn_targets, gcn_q10, gcn_q90)
 gin_cov, gin_width, _ = compute_calibration_metrics(gin_targets, gin_q10, gin_q90)
