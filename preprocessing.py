@@ -94,7 +94,7 @@ class Preprocessing:
         _, Y_val_ha  = self.sliding_windows(ha_val_norm)
         _, Y_test_ha = self.sliding_windows(ha_test_norm)
 
-        return X_train, Y_train, X_val, Y_val, X_test, Y_test, Y_val_ha, Y_test_ha, adj_matrix, train_grouped
+        return X_train, Y_train, X_val, Y_val, X_test, Y_test, Y_val_ha, Y_test_ha, adj_matrix, train_grouped, mean, std
 
     def sliding_windows(self, data, window_in=12, window_out=12):
         if hasattr(data, 'values'):

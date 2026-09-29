@@ -4,7 +4,8 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
 
-
+def denormalize(x, mean, std):
+    return x*std+mean
 
 def make_loaders(train_dataset, val_dataset, test_dataset, batch_size=32):
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -282,21 +283,30 @@ def plot_model_comparison(metrics_dict,  horizon_steps=[3, 6, 12], save_path=Non
         print(f"Grafico salvato in: {save_path}")
     plt.show()
 
-def plot_quantile_predictions(y_true,q10,q50,q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="Model",save_path=None):
-    if torch.is_tensor(y_true):
-        y_true = y_true.numpy()
-    if torch.is_tensor(q10):
-        q10 = q10.numpy()
-    if torch.is_tensor(q50):
-        q50 = q50.numpy()
-    if torch.is_tensor(q90):
-        q90 = q90.numpy()
-    n = min(num_steps, y_true.shape[0])
-    time_axis = np.arange(n)
-    true_values = y_true[:n, sensor_idx, horizon_idx]
-    lower = q10[:n, sensor_idx, horizon_idx]
-    median = q50[:n, sensor_idx, horizon_idx]
-    upper = q90[:n, sensor_idx, horizon_idx]
+def plot_quantile_predictions(y_true, q10, q50, q90, sensor_idx=0, horizon_idx=0,
+                               num_steps=100, start_idx=0, model_name="Model",
+                               mean=None, std=None, period_label='Normal', save_path=None):
+    if torch.is_tensor(y_true): y_true = y_true.numpy()
+    if torch.is_tensor(q10): q10 = q10.numpy()
+    if torch.is_tensor(q50): q50 = q50.numpy()
+    if torch.is_tensor(q90): q90 = q90.numpy()
+
+    end_idx = min(start_idx + num_steps, y_true.shape[0])
+    time_axis = np.arange(start_idx, end_idx)
+    true_values = y_true[start_idx:end_idx, sensor_idx, horizon_idx]
+    lower = q10[start_idx:end_idx, sensor_idx, horizon_idx]
+    median = q50[start_idx:end_idx, sensor_idx, horizon_idx]
+    upper = q90[start_idx:end_idx, sensor_idx, horizon_idx]
+
+
+    if mean is not None and std is not None:
+        true_values=denormalize(true_values, mean, std)
+        lower=denormalize(lower, mean, std)
+        median=denormalize(median, mean, std)
+        upper=denormalize(upper, mean, std)
+        ylabel='Velocità'
+    else:
+        ylabel='Valore'
 
     horizon_names = [
         "15 minuti",

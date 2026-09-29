@@ -24,7 +24,7 @@ print(f"Device utilizzato: {device}")
 
 # Preprocessing e Grafo
 prep = pre(data_path='Dataset/metr-la.csv', adj_path='Dataset/adj_Metr-LA.pkl')
-X_train, Y_train, X_val, Y_val, X_test, Y_test, Y_val_ha, Y_test_ha, adj_matrix, train_grouped = prep.normalization(use_graph=True)
+X_train, Y_train, X_val, Y_val, X_test, Y_test, Y_val_ha, Y_test_ha, adj_matrix, train_grouped, data_mean, data_std = prep.normalization(use_graph=True)
 
 # Matrice Laplaciana e Polinomi di Chebyshev
 L_norm, A_norm = graph_to_matrices(adj_matrix)
@@ -152,10 +152,41 @@ scaler_gin = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 gin_train_losses=train_tuned_model(model_gin, train_loader, optimizer_gin, scaler_gin, quantiles, best_gin_epochs, device, model_name="GIN Tuned")
 gin_pb, gin_mae, gin_rmse, gin_targets, gin_q10, gin_q50, gin_q90 = evaluate_model_test(model_gin,test_loader,quantiles,device,model_name="GIN Model (Spatial)")
 plot_training_curves(best_gin_train_losses, best_gin_val_losses, model_name="GIN (Best Trial - Tuning)", save_path="plots/gin_tuning_best.png")#PLOT PREDIZIONI CON INTERVALLO DI CONFIDENZA
-plot_quantile_predictions(gcn_targets,gcn_q10,gcn_q50,gcn_q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="GCN",save_path="plots/gcn_predictions.png")
-plot_quantile_predictions(temp_targets,temp_q10,temp_q50,temp_q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="Temporal",save_path="plots/temporal_predictions.png")
-plot_quantile_predictions(gin_targets,gin_q10,gin_q50,gin_q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="GIN",save_path="plots/gin_predictions.png")
+#PLOT PREDIZIONI CON INTERVALLO DI CONFIDENZA (periodo normale vs periodo di congestione)
+sensor_idx, horizon_idx = 0, 0
+window = 100
 
+# Individuo un tratto contiguo di 'window' step nel test set con la velocità media più bassa
+# sul sensore scelto: lo uso come proxy di periodo "stressato" (congestione).
+# NB: euristica esplorativa, non sostituisce lo stress test formale richiesto dalla traccia,
+# che va definito prima della valutazione finale (subset su protocollo train/val, o masking sensori).
+speed_series = gcn_targets[:, sensor_idx, horizon_idx].numpy()
+rolling_mean = np.convolve(speed_series, np.ones(window) / window, mode='valid')
+stress_start = int(np.argmin(rolling_mean))
+
+for name, targets, q10, q50, q90 in [
+    ("GCN", gcn_targets, gcn_q10, gcn_q50, gcn_q90),
+    ("Temporal", temp_targets, temp_q10, temp_q50, temp_q90),
+    ("GIN", gin_targets, gin_q10, gin_q50, gin_q90),
+]:
+    plot_quantile_predictions(targets, q10, q50, q90, sensor_idx=sensor_idx, horizon_idx=horizon_idx,
+                               num_steps=window, start_idx=0, model_name=name,
+                               mean=data_mean, std=data_std, period_label="Normale",
+                               save_path=f"plots/{name.lower()}_normal.png")
+    plot_quantile_predictions(targets, q10, q50, q90, sensor_idx=sensor_idx, horizon_idx=horizon_idx,
+                               num_steps=window, start_idx=stress_start, model_name=name,
+                               mean=data_mean, std=data_std, period_label="Congestione",
+                               save_path=f"plots/{name.lower()}_stress.png")
+
+
+#PLOT MODEL COMPARISON
+plot_model_comparison(
+    {
+        'MAE':{'HA':ha_mae, 'Temporal': temp_mae, 'GCN': gcn_mae, 'GIN': gin_mae},
+        "RMSE": {"HA": ha_rmse, "Temporal": temp_rmse, "GCN": gcn_rmse, "GIN": gin_rmse},
+    },
+    save_path='plots/model_comparison.png'
+)
 
 # --- TABELLA RIASSUNTIVA FINALE SUL TEST SET ---
 print("\n" + "="*80)
