@@ -130,6 +130,7 @@ def train_and_eval_model(
 
 def train_tuned_model(model, train_loader, optimizer, scaler, quantiles, epochs, device, model_name='Model'):
     print(f"\n=================== Inizio Addestramento Finale: {model_name} ===================")
+    train_losses=[]
     for epoch in range(1, epochs + 1):
         model.train()
         train_loss = 0.0
@@ -148,7 +149,9 @@ def train_tuned_model(model, train_loader, optimizer, scaler, quantiles, epochs,
             train_loss += loss.item() * x_train.size(0)
 
         train_loss /= len(train_loader.dataset)
+        train_losses.append(train_loss)
         print(f'{model_name} | Epoca {epoch:02d}/{epochs:02d} | Train Loss: {train_loss:.4f}')
+    return train_losses
 
 
 def evaluate_model_test(model,test_loader,quantiles,device,model_name="Model"):
@@ -221,7 +224,7 @@ def evaluate_model_test(model,test_loader,quantiles,device,model_name="Model"):
 
 def plot_training_curves(
     train_losses,
-    val_losses,
+    val_losses=None,
     model_name='Modello',
     save_path=None
 ):

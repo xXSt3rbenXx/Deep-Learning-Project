@@ -64,16 +64,18 @@ learning_rates = [1e-4, 1e-3]
 layers = [2, 3]
 prod = product( K, learning_rates, layers)
 best_hp, best_val_loss = None, np.inf
-
+best_gcn_train_losses, best_gcn_val_losses=None, None
 for  k, lr, l in prod:
     print(f"\nIperparametri attuali GCN: K={k}, lr={lr}, layers={l}")
+    torch.manual_seed(67)
+    np.random.seed(67)
     T = chebyshev_pol(L_norm, K=k, device=device)
     model_gcn = GCN(input_dim=1, hidden_dim=32, out_dim=1, T_list=T, kernel_size=3, num_layers=l, dropout=0.3).to(device)
-    optimizer_gcn = optim.Adam(model_gcn.parameters(), lr=lr)
+    optimizer_gcn = optim.AdamW(model_gcn.parameters(), lr=lr)
     scaler_gcn = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
     early_stopping = EarlyStopping(delta=0.001, verbose=True)
 
-    train_and_eval_model(
+    trial_train_losses, trial_val_losses=train_and_eval_model(
         model_gcn, train_loader, val_loader, optimizer_gcn, scaler_gcn,
         quantiles, epochs, device, early_stopping, model_name="GCN Model Tuning"
     )
@@ -81,6 +83,8 @@ for  k, lr, l in prod:
         best_val_loss = early_stopping.best_loss
         best_hp = (k, lr, l)
         best_epochs = early_stopping.best_epoch
+        best_gcn_train_losses=trial_train_losses
+        best_gcn_val_losses=trial_val_losses
 
 (k, lr, l) = best_hp
 print(f"\nMigliori Iperparametri GCN: K={k}, lr={lr}, layers={l} | Epoche: {best_epochs}")
@@ -89,18 +93,21 @@ gcn_hp = {"K": k, "num_layers": l, "lr": lr}
 # Addestramento Finale e Valutazione Test GCN
 T = chebyshev_pol(L_norm, K=k, device=device)
 model_gcn = GCN(input_dim=1, hidden_dim=32, out_dim=1, T_list=T, kernel_size=3, num_layers=l, dropout=0.3).to(device)
-optimizer_gcn = optim.Adam(model_gcn.parameters(), lr=lr)
+optimizer_gcn = optim.AdamW(model_gcn.parameters(), lr=lr)
 scaler_gcn = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 
-train_tuned_model(model_gcn, train_loader, optimizer_gcn, scaler_gcn, quantiles, best_epochs, device, model_name="GCN Tuned")
+gcn_train_losses=train_tuned_model(model_gcn, train_loader, optimizer_gcn, scaler_gcn, quantiles, best_epochs, device, model_name="GCN Tuned")
 gcn_pb, gcn_mae, gcn_rmse, gcn_targets, gcn_q10, gcn_q50, gcn_q90 = evaluate_model_test(model_gcn,test_loader,quantiles,device,model_name="GCN Model (Spectral)")
-# --- 3. TEMPORAL MODEL (NO GRAPH) ---
+plot_training_curves(best_gcn_train_losses, best_gcn_val_losses, model_name="GCN (Best Trial - Tuning)", save_path="plots/gcn_tuning_best.png")# --- 3. TEMPORAL MODEL (NO GRAPH) ---
+torch.manual_seed(67)
+np.random.seed(67)
 model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=3, num_layers=l, dropout=0.3).to(device)
-optimizer_temporal = optim.Adam(model_temporal.parameters(), lr=lr)
+optimizer_temporal = optim.AdamW(model_temporal.parameters(), lr=lr)
 scaler_temporal = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 early_stopping_temp = EarlyStopping(delta=0.001, verbose=True)
 
 temp_train_losses, temp_val_losses = train_and_eval_model(model_temporal,train_loader,val_loader,optimizer_temporal,scaler_temporal,quantiles,epochs,device,early_stopping_temp,model_name="Temporal Model (No Graph)")
+plot_training_curves(temp_train_losses, temp_val_losses, model_name='Temporal Model', save_path="plots/temporal_training.png")
 temp_pb, temp_mae, temp_rmse, temp_targets, temp_q10, temp_q50, temp_q90 = evaluate_model_test(model_temporal,test_loader,quantiles,device,model_name="Temporal Model (No Graph)")
 print(f"\nMigliori Iperparametri Temporal Model: lr={lr}, layers={l}.")
 temporal_hp = { "num_layers": l, "lr": lr}
@@ -109,7 +116,7 @@ eps_candidates = [1e-4, 1e-3, 1e-2]
 best_gin_val_loss = np.inf
 best_gin_hp = None
 best_gin_epochs = 0
-
+best_gin_train_losses, best_gin_val_losses=None, None
 prod = product(eps_candidates, learning_rates, layers)
 for eps, lr, l in prod:
     print(f"\nIperparametri attuali GIN, eps={eps}, lr={lr}, layers={l}")
@@ -117,11 +124,11 @@ for eps, lr, l in prod:
     np.random.seed(67)
     model_gin = GIN(input_dim=1, hidden_dim=32, out_dim=1, A=A_norm,
                      kernel_size=3, num_layers=l, dropout=0.3, eps=eps).to(device)
-    optimizer_gin = optim.Adam(model_gin.parameters(), lr=lr)
+    optimizer_gin = optim.AdamW(model_gin.parameters(), lr=lr)
     scaler_gin = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
     early_stopping = EarlyStopping(delta=0.001, verbose=True)
 
-    train_and_eval_model(
+    trial_train_losses, trial_val_losses=train_and_eval_model(
         model_gin, train_loader, val_loader, optimizer_gin, scaler_gin,
         quantiles, epochs, device, early_stopping, model_name="GIN Model Tuning"
     )
@@ -129,6 +136,8 @@ for eps, lr, l in prod:
         best_gin_val_loss = early_stopping.best_loss
         best_gin_hp = (eps, lr, l)
         best_gin_epochs = early_stopping.best_epoch
+        best_gin_train_losses = trial_train_losses
+        best_gin_val_losses = trial_val_losses
 
 eps, lr, l = best_gin_hp
 print(f"\nMigliori Iperparametri GIN: Eps={eps}, lr={lr}, layers={l} | Epoche: {best_gin_epochs}")
@@ -137,19 +146,19 @@ gin_hp = {"eps": eps, "num_layers": l, "lr": lr}
 
 model_gin = GIN(input_dim=1, out_dim=1, hidden_dim=32, A=A_norm,
                 kernel_size=3, num_layers=l, dropout=0.3, eps=eps).to(device)
-optimizer_gin = optim.Adam(model_gin.parameters(), lr=lr)
+optimizer_gin = optim.AdamW(model_gin.parameters(), lr=lr)
 scaler_gin = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 
-train_tuned_model(model_gin, train_loader, optimizer_gin, scaler_gin, quantiles, best_gin_epochs, device, model_name="GIN Tuned")
+gin_train_losses=train_tuned_model(model_gin, train_loader, optimizer_gin, scaler_gin, quantiles, best_gin_epochs, device, model_name="GIN Tuned")
 gin_pb, gin_mae, gin_rmse, gin_targets, gin_q10, gin_q50, gin_q90 = evaluate_model_test(model_gin,test_loader,quantiles,device,model_name="GIN Model (Spatial)")
-
-#PLOT PREDIZIONI CON INTERVALLO DI CONFIDENZA
+plot_training_curves(best_gin_train_losses, best_gin_val_losses, model_name="GIN (Best Trial - Tuning)", save_path="plots/gin_tuning_best.png")#PLOT PREDIZIONI CON INTERVALLO DI CONFIDENZA
 plot_quantile_predictions(gcn_targets,gcn_q10,gcn_q50,gcn_q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="GCN",save_path="plots/gcn_predictions.png")
 plot_quantile_predictions(temp_targets,temp_q10,temp_q50,temp_q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="Temporal",save_path="plots/temporal_predictions.png")
 plot_quantile_predictions(gin_targets,gin_q10,gin_q50,gin_q90,sensor_idx=0,horizon_idx=0,num_steps=100,model_name="GIN",save_path="plots/gin_predictions.png")
 
 
-# --- TABELLA RIASSUNTIVA FINALE SUL TEST SET ---print("\n" + "="*80)
+# --- TABELLA RIASSUNTIVA FINALE SUL TEST SET ---
+print("\n" + "="*80)
 print("                       RIEPILOGO METRICHE TEST SET")
 print("="*80)
 print(f"{'Modello':<25} | {'Pinball Loss':<12} | {'MAE (15m/30m/60m)':<22} | {'RMSE (15m/30m/60m)'}")
