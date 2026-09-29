@@ -320,10 +320,10 @@ def plot_quantile_predictions(y_true, q10, q50, q90, sensor_idx=0, horizon_idx=0
     plt.fill_between(time_axis,lower,upper, alpha=0.2,label="Intervallo 80% (Q10-Q90)")
 
     plt.title( f"{model_name} - Sensore {sensor_idx} - "
-               f"Orizzonte {horizon_names[horizon_idx]}"
+               f"Orizzonte {horizon_names[horizon_idx]} - Periodo {period_label}"
     )
     plt.xlabel("Passo temporale")
-    plt.ylabel("Valore")
+    plt.ylabel(ylabel)
     plt.legend()
     plt.grid(True, linestyle=":", alpha=0.6)
     plt.tight_layout()
@@ -335,3 +335,26 @@ def plot_quantile_predictions(y_true, q10, q50, q90, sensor_idx=0, horizon_idx=0
         plt.savefig(save_path, dpi=300,bbox_inches="tight")
         print(f'Grafico salvato in :{save_path}')
     plt.show()
+
+
+
+def compute_calibration_metrics(y_true, q10, q90):
+    #misuro la coverage empirica dell'intervallo [q10, q90] -> coverage attesa 80%
+    if not torch.is_tensor(y_true): y_true=torch.tensor(y_true)
+    if not torch.is_tensor(q10): q10=torch.tensor(q10)
+    if not torch.is_tensor(q90): q90=torch.tensor(q90)
+    in_bounds=(y_true>=q10) & (y_true<=q90)
+    coverage=torch.mean(in_bounds.float()).item()*100.0
+    width=torch.mean(q90-q10).item()
+
+    #coverage ->80%
+    #width=voglio che sia più piccola possibile, a parità di coverage
+    target_coverage = 0.80
+    calibration_error = abs(coverage - target_coverage)
+    return coverage, width, calibration_error
+
+def count_parameters(model):
+    #conta i parametri del modello
+    return sum(p.numel() for p in model.parameters() if p.prequires_grad)
+
+
