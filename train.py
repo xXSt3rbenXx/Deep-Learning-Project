@@ -101,6 +101,10 @@ gcn_pb, gcn_mae, gcn_rmse, gcn_targets, gcn_q10, gcn_q50, gcn_q90 = evaluate_mod
 plot_training_curves(best_gcn_train_losses, best_gcn_val_losses, model_name="GCN (Best Trial - Tuning)", save_path="plots/gcn_tuning_best.png")# --- 3. TEMPORAL MODEL (NO GRAPH) ---
 torch.manual_seed(67)
 np.random.seed(67)
+
+
+
+#TEMPORAL MODEL
 model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=3, num_layers=l, dropout=0.3).to(device)
 optimizer_temporal = optim.AdamW(model_temporal.parameters(), lr=lr)
 scaler_temporal = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
@@ -111,6 +115,9 @@ plot_training_curves(temp_train_losses, temp_val_losses, model_name='Temporal Mo
 temp_pb, temp_mae, temp_rmse, temp_targets, temp_q10, temp_q50, temp_q90 = evaluate_model_test(model_temporal,test_loader,quantiles,device,model_name="Temporal Model (No Graph)")
 print(f"\nMigliori Iperparametri Temporal Model: lr={lr}, layers={l}.")
 temporal_hp = { "num_layers": l, "lr": lr}
+
+
+
 # --- 4. GIN MODEL (SPATIAL GRAPH) ---
 eps_candidates = [1e-4, 1e-3, 1e-2]
 best_gin_val_loss = np.inf
@@ -151,6 +158,7 @@ scaler_gin = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 
 gin_train_losses=train_tuned_model(model_gin, train_loader, optimizer_gin, scaler_gin, quantiles, best_gin_epochs, device, model_name="GIN Tuned")
 gin_pb, gin_mae, gin_rmse, gin_targets, gin_q10, gin_q50, gin_q90 = evaluate_model_test(model_gin,test_loader,quantiles,device,model_name="GIN Model (Spatial)")
+
 plot_training_curves(best_gin_train_losses, best_gin_val_losses, model_name="GIN (Best Trial - Tuning)", save_path="plots/gin_tuning_best.png")#PLOT PREDIZIONI CON INTERVALLO DI CONFIDENZA
 #PLOT PREDIZIONI CON INTERVALLO DI CONFIDENZA (periodo normale vs periodo di congestione)
 sensor_idx, horizon_idx = 0, 0
@@ -187,18 +195,27 @@ plot_model_comparison(
     },
     save_path='plots/model_comparison.png'
 )
+temp_cov, temp_width, _ = compute_calibration_metrics(temp_targets, temp_q10, temp_q90)
+gcn_cov, gcn_width, _ = compute_calibration_metrics(gcn_targets, gcn_q10, gcn_q90)
+gin_cov, gin_width, _ = compute_calibration_metrics(gin_targets, gin_q10, gin_q90)
 
 # --- TABELLA RIASSUNTIVA FINALE SUL TEST SET ---
-print("\n" + "="*80)
-print("                       RIEPILOGO METRICHE TEST SET")
-print("="*80)
-print(f"{'Modello':<25} | {'Pinball Loss':<12} | {'MAE (15m/30m/60m)':<22} | {'RMSE (15m/30m/60m)'}")
-print("-" * 80)
-print(f"{'Historical Average':<25} | {ha_pb:<12.4f} | {f'{ha_mae[0]:.3f}/{ha_mae[1]:.3f}/{ha_mae[2]:.3f}':<22} | {f'{ha_rmse[0]:.3f}/{ha_rmse[1]:.3f}/{ha_rmse[2]:.3f}'}")
-print(f"{'Temporal (No Graph)':<25} | {temp_pb:<12.4f} | {f'{temp_mae[0]:.3f}/{temp_mae[1]:.3f}/{temp_mae[2]:.3f}':<22} | {f'{temp_rmse[0]:.3f}/{temp_rmse[1]:.3f}/{temp_rmse[2]:.3f}'}")
-print(f"{'GCN (Spectral)':<25} | {gcn_pb:<12.4f} | {f'{gcn_mae[0]:.3f}/{gcn_mae[1]:.3f}/{gcn_mae[2]:.3f}':<22} | {f'{gcn_rmse[0]:.3f}/{gcn_rmse[1]:.3f}/{gcn_rmse[2]:.3f}'}")
-print(f"{'GIN (Spatial)':<25} | {gin_pb:<12.4f} | {f'{gin_mae[0]:.3f}/{gin_mae[1]:.3f}/{gin_mae[2]:.3f}':<22} | {f'{gin_rmse[0]:.3f}/{gin_rmse[1]:.3f}/{gin_rmse[2]:.3f}'}")
-print("="*80)
+print("\n" + "="*115)
+print("                                   RIEPILOGO METRICHE TEST SET & CALIBRAZIONE")
+print("="*115)
+print(f"{'Modello':<22} | {'Pinball':<8} | {'Coverage (T:80%)':<16} | {'MPIW (Width)':<12} | {'MAE (15m/30m/60m)':<22} | {'RMSE (15m/30m/60m)'}")
+print("-" * 115)
+print(f"{'Historical Average':<22} | {ha_pb:<8.4f} | {'N/A':<16} | {'N/A':<12} | {f'{ha_mae[0]:.3f}/{ha_mae[1]:.3f}/{ha_mae[2]:.3f}':<22} | {f'{ha_rmse[0]:.3f}/{ha_rmse[1]:.3f}/{ha_rmse[2]:.3f}'}")
+print(f"{'Temporal (No Graph)':<22} | {temp_pb:<8.4f} | {f'{temp_cov:.2f}%':<16} | {temp_width:<12.4f} | {f'{temp_mae[0]:.3f}/{temp_mae[1]:.3f}/{temp_mae[2]:.3f}':<22} | {f'{temp_rmse[0]:.3f}/{temp_rmse[1]:.3f}/{temp_rmse[2]:.3f}'}")
+print(f"{'GCN (Spectral)':<22} | {gcn_pb:<8.4f} | {f'{gcn_cov:.2f}%':<16} | {gcn_width:<12.4f} | {f'{gcn_mae[0]:.3f}/{gcn_mae[1]:.3f}/{gcn_mae[2]:.3f}':<22} | {f'{gcn_rmse[0]:.3f}/{gcn_rmse[1]:.3f}/{gcn_rmse[2]:.3f}'}")
+print(f"{'GIN (Spatial)':<22} | {gin_pb:<8.4f} | {f'{gin_cov:.2f}%':<16} | {gin_width:<12.4f} | {f'{gin_mae[0]:.3f}/{gin_mae[1]:.3f}/{gin_mae[2]:.3f}':<22} | {f'{gin_rmse[0]:.3f}/{gin_rmse[1]:.3f}/{gin_rmse[2]:.3f}'}")
+print("="*115)
+
+# --- CONTEGGIO PARAMETRI ---
+print("\n--- COMPLESSITÀ MODELLI ---")
+print(f"Parametri Addestrabili GCN      : {count_parameters(model_gcn):,}")
+print(f"Parametri Addestrabili Temporal : {count_parameters(model_temporal):,}")
+print(f"Parametri Addestrabili GIN      : {count_parameters(model_gin):,}\n")
 
 # Salvataggio Pesi
 torch.save({"state_dict": model_gcn.state_dict(), "hyperparameters": gcn_hp}, "gcn_final_complete.pt")
