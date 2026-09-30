@@ -62,7 +62,7 @@ def evaluate_traffic_stress_scenarios(model, test_loader, quantiles, device, dat
     with torch.no_grad():
         for x_batch, _ in test_loader:
             real_speeds = denormalize(x_batch, data_mean, data_std)
-            batch_means = real_speeds.mean(dim=(1, 2)).cpu().numpy()
+            batch_means = real_speeds.mean(dim=(1, 2,3)).cpu().numpy()
             window_speeds.extend(batch_means)
     window_speeds = np.array(window_speeds)
 
