@@ -230,7 +230,7 @@ def plot_training_curves(
     save_path=None
 ):
     epochs = np.arange(1, len(train_losses) + 1)
-    plt.figure(figsize=(9, 5))
+    fig=plt.figure(figsize=(9, 5))
     plt.plot(
         epochs,
         train_losses,
@@ -258,7 +258,7 @@ def plot_training_curves(
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f'Grafico Salvato in: {save_path}')
     plt.show()
-
+    plt.close(fig)
 def plot_model_comparison(metrics_dict,  horizon_steps=[3, 6, 12], save_path=None):
     #confronto il modello su più metriche contemporaneamente
     num_metrics=len(metrics_dict)
@@ -320,7 +320,7 @@ def plot_quantile_predictions(y_true, q10, q50, q90, sensor_idx=0, horizon_idx=0
         "60 minuti"
     ]
 
-    plt.figure(figsize=(12, 6))
+    fig=plt.figure(figsize=(12, 6))
     plt.plot(time_axis, true_values, label="Valore reale",linewidth=1.5)
     plt.plot( time_axis,median, label="Q50", linewidth=2)
     plt.fill_between(time_axis,lower,upper, alpha=0.2,label="Intervallo 80% (Q10-Q90)")
@@ -341,27 +341,22 @@ def plot_quantile_predictions(y_true, q10, q50, q90, sensor_idx=0, horizon_idx=0
         plt.savefig(save_path, dpi=300,bbox_inches="tight")
         print(f'Grafico salvato in :{save_path}')
     plt.show()
+    plt.close()
 
 
-
-def compute_calibration_metrics(y_true, q10, q90):
-    #misuro la coverage empirica dell'intervallo [q10, q90] -> coverage attesa 80%
-    if not torch.is_tensor(y_true): y_true=torch.tensor(y_true)
-    if not torch.is_tensor(q10): q10=torch.tensor(q10)
-    if not torch.is_tensor(q90): q90=torch.tensor(q90)
-    in_bounds=(y_true>=q10) & (y_true<=q90)
-    coverage=torch.mean(in_bounds.float()).item()*100.0
-    width=torch.mean(q90-q10).item()
-
-    #coverage ->80%
-    #width=voglio che sia più piccola possibile, a parità di coverage
-    target_coverage = 0.80
+def compute_calibration_metrics(y_true, q10, q90, target_coverage=80.0):
+    if not torch.is_tensor(y_true): y_true = torch.tensor(y_true)
+    if not torch.is_tensor(q10): q10 = torch.tensor(q10)
+    if not torch.is_tensor(q90): q90 = torch.tensor(q90)
+    in_bounds = (y_true >= q10) & (y_true <= q90)
+    coverage = torch.mean(in_bounds.float()).item() * 100.0
+    width = torch.mean(q90 - q10).item()
     calibration_error = abs(coverage - target_coverage)
     return coverage, width, calibration_error
 
 def count_parameters(model):
     #conta i parametri del modello
-    return sum(p.numel() for p in model.parameters() if p.prequires_grad)
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 #STRESS TEST
