@@ -117,17 +117,21 @@ def evaluate_traffic_stress_scenarios(model, test_loader, quantiles, device, dat
     q90 = torch.cat(all_q90, dim=0)
     targets = torch.cat(all_targets, dim=0)
 
-    mae_norm = torch.abs(targets[:, :, 0] - q50[:, :, 0]).mean().item()
-    rmse_norm = torch.sqrt(torch.mean((targets[:, :, 0] - q50[:, :, 0]) ** 2)).item()
-    mae_real = mae_norm * data_std
-    rmse_real = rmse_norm * data_std
-    coverage, width, ace = compute_calibration_metrics(targets, q10, q90, target_coverage=80.0)
+    horizons_idx = [0, 1, 2]
+    horizon_names = ["Step 3 (15m)", "Step 6 (30m)", "Step 12 (60m)"]
 
+    mae_real_list, rmse_real_list = [], []
+    for idx in horizons_idx:
+        mae_norm = torch.abs(targets[:, :, idx] - q50[:, :, idx]).mean().item()
+        rmse_norm = torch.sqrt(torch.mean((targets[:, :, idx] - q50[:, :, idx]) ** 2)).item()
+        mae_real_list.append(mae_norm * data_std)
+        rmse_real_list.append(rmse_norm * data_std)
+    coverage, width, ace = compute_calibration_metrics(targets, q10, q90, target_coverage=80.0)
     return {
         'label': scenario_label,
         'pb_loss': test_pb_loss,
-        'mae_real': mae_real,
-        'rmse_real': rmse_real,
+        'mae_real': mae_real_list,      # ora una lista di 3 valori, non uno scalare
+        'rmse_real': rmse_real_list,    # idem
         'coverage': coverage,
         'ace': ace,
         'mpiw': width,
@@ -161,8 +165,8 @@ for model_name, model_obj in models.items():
         if res:
             print(f"Scenario: {res['label']}")
             print(f"  - Pinball Loss: {res['pb_loss']:.4f}")
-            print(f"  - MAE (mph)   : {res['mae_real']:.2f}")
-            print(f"  - RMSE (mph)  : {res['rmse_real']:.2f}")
+            for h_name, mae_h, rmse_h in zip(horizon_names, res['mae_real'], res['rmse_real']):
+                print(f"  - [{h_name}] MAE: {mae_h:.2f} mph | RMSE: {rmse_h:.2f} mph")
             print(f"  - Coverage    : {res['coverage']:.2f}%")
             print(f"  - ACE         : {res['ace']:.4f}")
             print(f"  - MPIW        : {res['mpiw']:.4f}\n")
