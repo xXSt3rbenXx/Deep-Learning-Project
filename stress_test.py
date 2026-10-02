@@ -130,8 +130,8 @@ def evaluate_traffic_stress_scenarios(model, test_loader, quantiles, device, dat
     return {
         'label': scenario_label,
         'pb_loss': test_pb_loss,
-        'mae_real': mae_real_list,      # ora una lista di 3 valori, non uno scalare
-        'rmse_real': rmse_real_list,    # idem
+        'mae_real': mae_real_list,      
+        'rmse_real': rmse_real_list,    
         'coverage': coverage,
         'ace': ace,
         'mpiw': width,
@@ -147,6 +147,7 @@ models = {
 scenarios = ['high_congestion', 'zero_congestion']
 results = {}
 
+horizon_names = ["Step 3 (15m)", "Step 6 (30m)", "Step 12 (60m)"]
 for model_name, model_obj in models.items():
     results[model_name] = {}
     print(f"==================== STRESS TEST: {model_name} ====================")

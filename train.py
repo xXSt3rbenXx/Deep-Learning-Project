@@ -106,15 +106,15 @@ np.random.seed(67)
 
 #TEMPORAL MODEL
 model_temporal = Temporal_Model(input_dim=1, out_dim=3, hidden_dim=32, kernel_size=3, num_layers=l, dropout=0.3).to(device)
-optimizer_temporal = optim.AdamW(model_temporal.parameters(), lr=lr)
+optimizer_temporal = optim.AdamW(model_temporal.parameters(), lr=1e-4) #Il modello con lo stesso lr overfitta
 scaler_temporal = torch.amp.GradScaler('cuda' if device.type == 'cuda' else 'cpu')
 early_stopping_temp = EarlyStopping(delta=0.001, verbose=True)
 
 temp_train_losses, temp_val_losses = train_and_eval_model(model_temporal,train_loader,val_loader,optimizer_temporal,scaler_temporal,quantiles,epochs,device,early_stopping_temp,model_name="Temporal Model (No Graph)")
 plot_training_curves(temp_train_losses, temp_val_losses, model_name='Temporal Model', save_path="plots/temporal_training.png")
 temp_pb, temp_mae, temp_rmse, temp_targets, temp_q10, temp_q50, temp_q90 = evaluate_model_test(model_temporal,test_loader,quantiles,device,model_name="Temporal Model (No Graph)")
-print(f"\nMigliori Iperparametri Temporal Model: lr={lr}, layers={l}.")
-temporal_hp = { "num_layers": l, "lr": lr}
+print(f"\nMigliori Iperparametri Temporal Model: lr={1e-4}, layers={l}.")
+temporal_hp = { "num_layers": l, "lr": 1e-4}
 
 
 
